@@ -1,3 +1,37 @@
 .idea/
 *.iml
+.env
+/env
 .DS_Store
+
+# Java / Maven
+target/
+build/
+/backend/core/.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IntelliJ IDEA
+*.iws
+*.ipr
+
+# Eclipse / Spring Tool Suite
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+# NetBeans
+/backend/core/nbproject/private/
+/backend/core/nbbuild/
+/backend/core/dist/
+/backend/core/nbdist/
+/backend/core/.nb-gradle/
+
+# VS Code
+.vscode/
