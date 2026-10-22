@@ -1,0 +1,5 @@
+SYNTHETIC_F;CITY_NAME;RC_NAME;SYNTHETIC_U
+F_1;;;U_3
+F_1;Москва;Первый;U_1
+F_1;Москва;Обновлённый;U_1
+not-an-id;;;U_1
