@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261022-01" author="v.ledvanov">
+        <comment>Создание таблицы компаний с признаками профиля и индексами для поиска по группе и ОКВЭД.</comment>
+        <sql>
+            CREATE TABLE companies (
+                company_id TEXT PRIMARY KEY,
+                profile_status TEXT NOT NULL DEFAULT 'MISSING'
+                    CHECK (profile_status IN ('AVAILABLE', 'MISSING', 'CONFLICTING')),
+                organization_type TEXT,
+                ownership_type TEXT,
+                age_range TEXT,
+                business_lifecycle_stage TEXT,
+                main_industry_code TEXT,
+                main_industry_name TEXT,
+                negative_mark BOOLEAN,
+                employee_count_range_fns TEXT,
+                employee_count_range_spark TEXT,
+                client_type TEXT,
+                has_settlement_account BOOLEAN,
+                has_bank_guarantee BOOLEAN,
+                has_loan BOOLEAN,
+                has_leasing BOOLEAN,
+                has_deposit BOOLEAN,
+                has_payroll_project BOOLEAN,
+                has_foreign_trade BOOLEAN,
+                foreign_trade_countries TEXT,
+                has_factoring BOOLEAN,
+                revenue NUMERIC CHECK (revenue >= 0),
+                group_id TEXT,
+                city TEXT,
+                region TEXT
+            );
+            CREATE INDEX companies_group_id_idx ON companies (group_id);
+            CREATE INDEX companies_main_industry_code_idx ON companies (main_industry_code);
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261022-02" author="v.ledvanov">
+        <comment>Создание таблицы связей физических лиц с компаниями и индекса для поиска связей компании.</comment>
+        <sql>
+            CREATE TABLE person_company_links (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                person_id TEXT NOT NULL,
+                company_id TEXT NOT NULL REFERENCES companies (company_id),
+                city_name TEXT,
+                regional_center_name TEXT,
+                UNIQUE (person_id, company_id)
+            );
+            CREATE INDEX person_company_links_company_id_idx ON person_company_links (company_id);
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261022-03" author="v.ledvanov">
+        <comment>Создание таблицы платёжных агрегатов между компаниями и индекса для поиска входящих платежей.</comment>
+        <sql>
+            CREATE TABLE company_payment_summaries (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                payer_company_id TEXT NOT NULL REFERENCES companies (company_id),
+                recipient_company_id TEXT NOT NULL REFERENCES companies (company_id),
+                total_payment_amount NUMERIC NOT NULL CHECK (total_payment_amount >= 0),
+                payment_count BIGINT NOT NULL CHECK (payment_count >= 0),
+                UNIQUE (payer_company_id, recipient_company_id)
+            );
+            CREATE INDEX company_payment_summaries_recipient_idx
+                ON company_payment_summaries (recipient_company_id);
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261022-04" author="v.ledvanov" runInTransaction="true">
+        <comment>Однократная загрузка компаний, связей физических лиц и платёжных агрегатов из CSV в ресурсах приложения.</comment>
+        <customChange class="alpha.business.insight.core.migration.ImportCompanyCsvChange"/>
+    </changeSet>
+</databaseChangeLog>
