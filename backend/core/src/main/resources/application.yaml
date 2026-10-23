@@ -23,6 +23,10 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/master.xml
 
+qdrant:
+  host: ${QDRANT_HOST:localhost}
+  grpc-port: ${QDRANT_GRPC_PORT:6334}
+
 company-context:
   top-counterparties: ${COMPANY_CONTEXT_TOP_COUNTERPARTIES:5}
 
