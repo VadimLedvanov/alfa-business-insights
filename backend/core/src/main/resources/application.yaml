@@ -1,3 +1,7 @@
+server:
+  servlet:
+    context-path: /api
+
 spring:
   application:
     name: core
@@ -18,6 +22,9 @@ spring:
       ddl-auto: validate
   liquibase:
     change-log: classpath:db/changelog/master.xml
+
+company-context:
+  top-counterparties: ${COMPANY_CONTEXT_TOP_COUNTERPARTIES:5}
 
 springdoc:
   swagger-ui:

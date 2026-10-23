@@ -15,10 +15,10 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) {
-        var roles = new JwtGrantedAuthoritiesConverter();
+        JwtGrantedAuthoritiesConverter roles = new JwtGrantedAuthoritiesConverter();
         roles.setAuthoritiesClaimName("roles");
         roles.setAuthorityPrefix("ROLE_");
-        var converter = new JwtAuthenticationConverter();
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(roles);
 
         return http
@@ -27,7 +27,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs",
                                 "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
-                        .requestMatchers("/api/admin/**").hasRole("SYSTEM_ADMIN")
+                        .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
                         .anyRequest().hasAnyRole("SYSTEM_ADMIN", "COMPANY_DIRECTOR"))
                 .oauth2ResourceServer(server ->
                         server.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))

@@ -11,7 +11,7 @@ docker compose -f infrastructure/docker-compose.yaml up -d --build
 
 ## OpenAPI и Swagger UI
 
-[Swagger UI](http://localhost:8080/swagger-ui.html)
+[Swagger UI](http://localhost:8080/api/swagger-ui.html)
 
 | Роль | Логин | Пароль |
 | --- | --- | --- |

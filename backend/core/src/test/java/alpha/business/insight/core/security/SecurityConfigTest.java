@@ -15,6 +15,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springdoc.core.configuration.SpringDocConfiguration;
@@ -51,10 +52,11 @@ class SecurityConfigTest {
 
     @Test
     void givenNoToken_whenGetOpenApi_thenReturnApiWithKeycloakLogin() throws Exception {
-        mvc.perform(get("/v3/api-docs"))
+        mvc.perform(apiGet("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.info.title").value("Alfa Business Insights API"))
-                .andExpect(jsonPath("$.paths['/api/auth/me'].get").exists())
+                .andExpect(jsonPath("$.servers[0].url").value("http://localhost/api"))
+                .andExpect(jsonPath("$.paths['/auth/me'].get").exists())
                 .andExpect(jsonPath("$.components.securitySchemes.keycloak.type").value("oauth2"))
                 .andExpect(jsonPath("$.components.securitySchemes.keycloak.flows.authorizationCode.authorizationUrl")
                         .value("http://localhost/test-realm/protocol/openid-connect/auth"))
@@ -65,40 +67,40 @@ class SecurityConfigTest {
 
     @Test
     void givenNoToken_whenGetSwaggerUi_thenReturnUiAndConfiguration() throws Exception {
-        mvc.perform(get("/swagger-ui.html"))
+        mvc.perform(apiGet("/swagger-ui.html"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/swagger-ui/index.html"));
-        mvc.perform(get("/swagger-ui/index.html"))
+                .andExpect(redirectedUrl("/api/swagger-ui/index.html"));
+        mvc.perform(apiGet("/swagger-ui/index.html"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Swagger UI")));
-        mvc.perform(get("/swagger-ui/swagger-initializer.js"))
+        mvc.perform(apiGet("/swagger-ui/swagger-initializer.js"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"clientId\":\"alfa-backend\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"usePkceWithAuthorizationCodeGrant\":true")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"additionalQueryStringParams\":{\"prompt\":\"login\"}")));
-        mvc.perform(get("/swagger-ui/oauth2-redirect.html")).andExpect(status().isOk());
-        mvc.perform(get("/v3/api-docs/swagger-config"))
+        mvc.perform(apiGet("/swagger-ui/oauth2-redirect.html")).andExpect(status().isOk());
+        mvc.perform(apiGet("/v3/api-docs/swagger-config"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.url").value("/v3/api-docs"));
+                .andExpect(jsonPath("$.url").value("/api/v3/api-docs"));
     }
 
     @Test
     void givenNoToken_whenGetOpenApiYaml_thenReturnSpecification() throws Exception {
-        mvc.perform(get("/v3/api-docs.yaml"))
+        mvc.perform(apiGet("/v3/api-docs.yaml"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("/api/auth/me:")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/auth/me:")));
     }
 
     @Test
     void givenNoToken_whenRequest_thenUnauthorized() throws Exception {
-        mvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
-        mvc.perform(post("/api/admin/check")).andExpect(status().isUnauthorized());
+        mvc.perform(apiGet("/auth/me")).andExpect(status().isUnauthorized());
+        mvc.perform(apiPost("/admin/check")).andExpect(status().isUnauthorized());
     }
 
     @Test
     void givenInvalidToken_whenRequest_thenUnauthorized() throws Exception {
         when(decoder.decode("invalid")).thenThrow(new BadJwtException("Invalid token"));
-        mvc.perform(get("/api/auth/me").header("Authorization", "Bearer invalid"))
+        mvc.perform(apiGet("/auth/me").header("Authorization", "Bearer invalid"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -106,7 +108,7 @@ class SecurityConfigTest {
     @ValueSource(strings = {"SYSTEM_ADMIN", "COMPANY_DIRECTOR"})
     void givenApplicationRole_whenGetMe_thenReturnIdentity(String role) throws Exception {
         token(role);
-        mvc.perform(get("/api/auth/me").header("Authorization", "Bearer valid"))
+        mvc.perform(apiGet("/auth/me").header("Authorization", "Bearer valid"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("user-id"))
                 .andExpect(jsonPath("$.username").value("demo"))
@@ -117,26 +119,34 @@ class SecurityConfigTest {
     @ValueSource(strings = {"", "OTHER_ROLE"})
     void givenNoApplicationRole_whenGetMe_thenForbidden(String role) throws Exception {
         token(role);
-        mvc.perform(get("/api/auth/me").header("Authorization", "Bearer valid"))
+        mvc.perform(apiGet("/auth/me").header("Authorization", "Bearer valid"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void givenDirector_whenAdminRequest_thenForbidden() throws Exception {
         token("COMPANY_DIRECTOR");
-        mvc.perform(get("/api/admin/check").header("Authorization", "Bearer valid"))
+        mvc.perform(apiGet("/admin/check").header("Authorization", "Bearer valid"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void givenAdmin_whenAdminRequest_thenAllowed() throws Exception {
         token("SYSTEM_ADMIN");
-        mvc.perform(get("/api/admin/check").header("Authorization", "Bearer valid"))
+        mvc.perform(apiGet("/admin/check").header("Authorization", "Bearer valid"))
                 .andExpect(status().isOk());
     }
 
+    private static MockHttpServletRequestBuilder apiGet(String path) {
+        return get("/api" + path).contextPath("/api");
+    }
+
+    private static MockHttpServletRequestBuilder apiPost(String path) {
+        return post("/api" + path).contextPath("/api");
+    }
+
     private void token(String role) {
-        var builder = Jwt.withTokenValue("valid").header("alg", "RS256")
+        Jwt.Builder builder = Jwt.withTokenValue("valid").header("alg", "RS256")
                 .subject("user-id").claim("preferred_username", "demo");
         if (!role.isEmpty()) {
             builder.claim("roles", List.of(role));
@@ -146,7 +156,7 @@ class SecurityConfigTest {
 
     @RestController
     static class AdminController {
-        @GetMapping("/api/admin/check")
+        @GetMapping("/admin/check")
         public String check() {
             return "ok";
         }
