@@ -11,7 +11,7 @@ import java.util.Objects;
 @RestController
 public class AuthController {
 
-    @GetMapping("/api/auth/me")
+    @GetMapping("/auth/me")
     public Map<String, Object> me(JwtAuthenticationToken authentication) {
         String username = authentication.getToken().getClaimAsString("preferred_username");
         return Map.of(
