@@ -18,6 +18,28 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  keycloak:
+    container_name: alfa-keycloak
+    image: quay.io/keycloak/keycloak:26.8.1
+    command: ["start-dev", "--import-realm"]
+    env_file:
+      - ../.env.example
+    environment:
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9000; printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3; cat <&3 | grep -q '200 OK'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    mem_limit: 1g
+    restart: unless-stopped
+
   backend:
     container_name: alfa-backend
     build:
@@ -27,9 +49,12 @@ services:
     ports:
       - "8080:8080"
     depends_on:
+      keycloak:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
   postgres_data:
+  keycloak_data:

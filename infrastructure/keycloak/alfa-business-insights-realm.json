@@ -1,0 +1,100 @@
+{
+  "realm": "alfa-business-insights",
+  "enabled": true,
+  "displayName": "Alfa Business Insights",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "SYSTEM_ADMIN",
+        "description": "Системный администратор"
+      },
+      {
+        "name": "COMPANY_DIRECTOR",
+        "description": "Директор компании"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "alfa-backend",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "application-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "backend-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "alfa-backend",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "sysadmin",
+      "enabled": true,
+      "firstName": "sysadmin",
+      "lastName": "Demo",
+      "email": "sysadmin@example.test",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sysadmin-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "SYSTEM_ADMIN"
+      ]
+    },
+    {
+      "username": "director",
+      "enabled": true,
+      "firstName": "director",
+      "lastName": "Demo",
+      "email": "director@example.test",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "director-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "COMPANY_DIRECTOR"
+      ]
+    }
+  ]
+}
