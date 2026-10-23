@@ -18,3 +18,12 @@ spring:
       ddl-auto: validate
   liquibase:
     change-log: classpath:db/changelog/master.xml
+
+springdoc:
+  swagger-ui:
+    oauth:
+      client-id: alfa-backend
+      use-pkce-with-authorization-code-grant: true
+      scopes: openid
+      additional-query-string-params:
+        prompt: login
