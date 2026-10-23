@@ -24,3 +24,7 @@ docker compose -f infrastructure/docker-compose.yaml up -d --build
 
 - Логин: `admin`
 - Пароль: `admin-dev`
+
+## Qdrant
+
+[Панель Qdrant](http://localhost:6333/dashboard)
