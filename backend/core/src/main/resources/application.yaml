@@ -3,6 +3,17 @@ server:
     context-path: /api
 
 spring:
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
+  cloud:
+    openfeign:
+      client:
+        config:
+          document-analyzer:
+            connectTimeout: 3000
+            readTimeout: 110000
   application:
     name: core
   security:
@@ -38,3 +49,10 @@ springdoc:
       scopes: openid
       additional-query-string-params:
         prompt: login
+
+documents:
+  storage-path: ${DOCUMENTS_STORAGE_PATH:./data/documents}
+
+ml:
+  stub: ${ML_STUB:true}
+  url: ${ML_URL:http://localhost:8000}

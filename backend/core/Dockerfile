@@ -9,7 +9,8 @@ RUN ./mvnw -B -ntp -Dmaven.test.skip=true package
 
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app app
+RUN groupadd --system app && useradd --system --gid app app \
+    && mkdir -p /app/data/documents && chown -R app:app /app/data
 COPY --from=build --chown=app:app /build/target/core.jar app.jar
 USER app
 EXPOSE 8080

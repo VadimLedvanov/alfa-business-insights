@@ -5,9 +5,7 @@ import alpha.business.insight.core.model.DialogMessage;
 import alpha.business.insight.core.model.Event;
 import alpha.business.insight.core.model.EventSourceType;
 import alpha.business.insight.core.model.EventStatus;
-import alpha.business.insight.core.model.Fact;
 import alpha.business.insight.core.model.Feedback;
-import alpha.business.insight.core.model.Fragment;
 import alpha.business.insight.core.model.Insight;
 import alpha.business.insight.core.model.InsightStep;
 import alpha.business.insight.core.model.UserCompanyAccess;
@@ -65,7 +63,7 @@ class AnalysisSchemaIntegrationTest {
     }
 
     @Test
-    @DisplayName("Сохранение и чтение всех сущностей, JSONB, массивов и составного ключа")
+    @DisplayName("Сохранение событий, разборов, JSONB и составного ключа")
     void givenAnalysisGraph_whenPersistAndReload_thenPreserveDataAndRelations() throws Exception {
         Instant now = Instant.parse("2026-10-23T10:00:00Z");
         Company company = entities.getReference(Company.class, "schema_company");
@@ -73,11 +71,6 @@ class AnalysisSchemaIntegrationTest {
                 "sourceRef", "reports/rates.pdf", "status", EventStatus.READY, "createdAt", now,
                 "materialsVersion", 1L));
         UUID fragmentId = UUID.randomUUID();
-        Fragment fragment = persist(Fragment.class, Map.of("id", fragmentId, "event", event, "page", 2,
-                "ordinal", 0, "text", "Ставка снижена"));
-        Fact fact = persist(Fact.class, Map.of("event", event, "fragment", fragment, "text", "Снижение ставки",
-                "topics", new String[]{"Макроэкономика"}, "factors", new String[]{"Ставка"},
-                "industries", new String[]{"62"}, "regions", new String[]{}));
         Map<String, Object> payload = Map.of("summary", "Кредиты станут дешевле", "sources", java.util.List.of(fragmentId.toString()));
         Insight insight = persist(Insight.class, Map.of("company", company, "event", event,
                 "materialsVersion", 1L, "payload", payload, "costRub", new BigDecimal("1.25"), "createdAt", now));
@@ -94,13 +87,6 @@ class AnalysisSchemaIntegrationTest {
 
         assertThat(entities.find(Event.class, event.getId()).getSourceType()).isEqualTo(EventSourceType.PDF);
         assertThat(entities.find(Event.class, event.getId()).getCreatedAt()).isEqualTo(now);
-        assertThat(entities.find(Fragment.class, fragmentId).getEvent().getId()).isEqualTo(event.getId());
-        Fact loadedFact = entities.find(Fact.class, fact.getId());
-        assertThat(loadedFact.getFragment().getId()).isEqualTo(fragmentId);
-        assertThat(loadedFact.getTopics()).containsExactly("Макроэкономика");
-        assertThat(loadedFact.getFactors()).containsExactly("Ставка");
-        assertThat(loadedFact.getIndustries()).containsExactly("62");
-        assertThat(loadedFact.getRegions()).isEmpty();
         Insight loadedInsight = entities.find(Insight.class, insight.getId());
         assertThat(loadedInsight.getPayload()).isEqualTo(payload);
         assertThat(loadedInsight.getCostRub()).isEqualByComparingTo("1.25");
@@ -122,14 +108,13 @@ class AnalysisSchemaIntegrationTest {
     }
 
     @Test
-    @DisplayName("Факт не может ссылаться на фрагмент другого события")
-    void givenFragmentOfAnotherEvent_whenInsertFact_thenReject() {
-        UUID first = insertEvent();
-        UUID second = insertEvent();
-        UUID fragment = UUID.randomUUID();
-        jdbc.update("INSERT INTO fragments (id, event_id, ordinal, text) VALUES (?, ?, 0, 'Фрагмент')", fragment, first);
-        assertThatThrownBy(() -> jdbc.update("INSERT INTO facts (event_id, fragment_id, text) VALUES (?, ?, 'Факт')",
-                second, fragment)).isInstanceOf(DataIntegrityViolationException.class);
+    @DisplayName("Таблиц чанков, фактов и очереди очистки в PostgreSQL нет")
+    void whenInspectSchema_thenChunksAreNotStoredInPostgres() {
+        assertThat(jdbc.queryForList("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                    AND table_name IN ('fragments', 'facts', 'document_upload_cleanup')
+                """, String.class)).isEmpty();
     }
 
     @Test
