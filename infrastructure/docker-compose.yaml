@@ -64,6 +64,9 @@ services:
       - ../.env.example
     environment:
       QDRANT_HOST: qdrant
+      DOCUMENTS_STORAGE_PATH: /app/data/documents
+    volumes:
+      - documents_data:/app/data/documents
     ports:
       - "8080:8080"
     depends_on:
@@ -79,3 +82,4 @@ volumes:
   postgres_data:
   keycloak_data:
   qdrant_data:
+  documents_data:

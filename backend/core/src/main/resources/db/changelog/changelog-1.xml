@@ -260,4 +260,94 @@
             COMMENT ON COLUMN company_payment_summaries.payment_count IS 'Количество платежей между плательщиком и получателем.';
         </sql>
     </changeSet>
+
+    <changeSet id="20261023-knowledge-documents" author="v.ledvanov">
+        <comment>База знаний PDF, связи фрагментов и компенсационная очистка загрузок.</comment>
+        <sql><![CDATA[
+            CREATE TABLE documents (
+                id UUID PRIMARY KEY,
+                title TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL UNIQUE,
+                size_bytes BIGINT NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 20971520),
+                sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+                uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                publication_date DATE,
+                schema_version INTEGER NOT NULL CHECK (schema_version > 0),
+                embedding_model TEXT NOT NULL,
+                embedding_dimension INTEGER NOT NULL CHECK (embedding_dimension > 0),
+                stub BOOLEAN NOT NULL
+            );
+
+            ALTER TABLE fragments ALTER COLUMN event_id DROP NOT NULL;
+            ALTER TABLE fragments ADD COLUMN document_id UUID REFERENCES documents(id);
+            ALTER TABLE fragments ADD CONSTRAINT fragments_owner_check
+                CHECK ((event_id IS NOT NULL) != (document_id IS NOT NULL));
+            ALTER TABLE fragments ADD CONSTRAINT fragments_document_page_check
+                CHECK (document_id IS NULL OR page IS NOT NULL);
+            ALTER TABLE fragments ADD CONSTRAINT fragments_document_ordinal_key UNIQUE (document_id, ordinal);
+            ALTER TABLE fragments ADD CONSTRAINT fragments_id_document_key UNIQUE (id, document_id);
+
+            ALTER TABLE facts ALTER COLUMN event_id DROP NOT NULL;
+            ALTER TABLE facts ADD COLUMN document_id UUID REFERENCES documents(id);
+            ALTER TABLE facts ADD COLUMN kind TEXT NOT NULL DEFAULT 'FACT' CHECK (kind IN ('FACT', 'BANK_VIEW'));
+            ALTER TABLE facts ADD CONSTRAINT facts_owner_check
+                CHECK ((event_id IS NOT NULL) != (document_id IS NOT NULL));
+            ALTER TABLE facts ADD CONSTRAINT facts_document_fragment_fk
+                FOREIGN KEY (fragment_id, document_id) REFERENCES fragments (id, document_id);
+            CREATE INDEX facts_document_id_idx ON facts (document_id);
+
+            CREATE TABLE document_upload_cleanup (
+                document_id UUID PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                collection_name TEXT NOT NULL,
+                expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP + INTERVAL '10 minutes'
+            );
+            CREATE INDEX document_upload_cleanup_expires_idx ON document_upload_cleanup (expires_at);
+
+            COMMENT ON TABLE documents IS 'Аналитический PDF банка в базе знаний для RAG.';
+            COMMENT ON COLUMN documents.id IS 'Идентификатор документа, общий с payload точек Qdrant.';
+            COMMENT ON COLUMN documents.title IS 'Название аналитического материала.';
+            COMMENT ON COLUMN documents.file_name IS 'Исходное имя загруженного файла.';
+            COMMENT ON COLUMN documents.file_path IS 'Путь к оригиналу PDF в файловом хранилище.';
+            COMMENT ON COLUMN documents.size_bytes IS 'Размер оригинала PDF в байтах.';
+            COMMENT ON COLUMN documents.sha256 IS 'SHA-256 оригинала PDF.';
+            COMMENT ON COLUMN documents.uploaded_at IS 'Время загрузки документа.';
+            COMMENT ON COLUMN documents.publication_date IS 'Дата публикации, если указана при загрузке.';
+            COMMENT ON COLUMN documents.schema_version IS 'Версия контракта ответа ML.';
+            COMMENT ON COLUMN documents.embedding_model IS 'Идентификатор модели векторов.';
+            COMMENT ON COLUMN documents.embedding_dimension IS 'Размерность векторов фрагментов.';
+            COMMENT ON COLUMN documents.stub IS 'Признак синтетического результата заглушки ML.';
+
+            COMMENT ON TABLE document_upload_cleanup IS 'Задание компенсационной очистки незавершённой загрузки PDF.';
+            COMMENT ON COLUMN document_upload_cleanup.document_id IS 'Идентификатор загрузки для удаления точек Qdrant.';
+            COMMENT ON COLUMN document_upload_cleanup.file_path IS 'Путь к удаляемому оригиналу PDF.';
+            COMMENT ON COLUMN document_upload_cleanup.collection_name IS 'Коллекция Qdrant, в которой могла начаться индексация.';
+            COMMENT ON COLUMN document_upload_cleanup.expires_at IS 'Время начала аварийной очистки после истечения срока обработки.';
+
+            COMMENT ON COLUMN fragments.document_id IS 'Документ базы знаний, которому принадлежит фрагмент; альтернатива event_id.';
+            COMMENT ON COLUMN facts.document_id IS 'Документ базы знаний, которому принадлежит утверждение; альтернатива event_id.';
+            COMMENT ON COLUMN facts.kind IS 'Вид извлечённого утверждения: FACT или BANK_VIEW.';
+            COMMENT ON TABLE fragments IS 'Фрагмент материала события или документа базы знаний.';
+            COMMENT ON TABLE facts IS 'Факт или позиция банка со ссылкой на подтверждающий фрагмент.';
+            COMMENT ON COLUMN fragments.ordinal IS 'Порядковый номер фрагмента внутри материала, начиная с нуля.';
+        ]]></sql>
+    </changeSet>
+
+    <changeSet id="20261023-pdf-chunks-in-qdrant" author="v.ledvanov">
+        <comment>Только метаданные документов в PostgreSQL; тексты чанков и векторы в Qdrant.</comment>
+        <sql>
+            ALTER TABLE documents ADD COLUMN chunk_count INTEGER;
+            UPDATE documents d SET chunk_count = (
+                SELECT COUNT(*) FROM fragments f WHERE f.document_id = d.id
+            );
+            ALTER TABLE documents ALTER COLUMN chunk_count SET NOT NULL;
+            ALTER TABLE documents ADD CONSTRAINT documents_chunk_count_check CHECK (chunk_count > 0);
+            COMMENT ON COLUMN documents.chunk_count IS 'Количество чанков документа, хранящихся только в Qdrant.';
+
+            DROP TABLE facts;
+            DROP TABLE fragments;
+            DROP TABLE document_upload_cleanup;
+        </sql>
+    </changeSet>
 </databaseChangeLog>
