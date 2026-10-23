@@ -75,4 +75,189 @@
         <comment>Однократная загрузка компаний, связей физических лиц и платёжных агрегатов из CSV в ресурсах приложения.</comment>
         <customChange class="alpha.business.insight.core.migration.ImportCompanyCsvChange"/>
     </changeSet>
+
+    <changeSet id="20261023-01" author="v.ledvanov">
+        <comment>Хранение событий, материалов, разборов, диалога, оценок и доступа пользователей.</comment>
+        <sql>
+            CREATE TABLE events (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                title TEXT NOT NULL,
+                source_type TEXT NOT NULL CHECK (source_type IN ('TEXT', 'URL', 'PDF')),
+                source_ref TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PROCESSING' CHECK (status IN ('PROCESSING', 'READY', 'FAILED')),
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                materials_version BIGINT NOT NULL DEFAULT 1 CHECK (materials_version > 0)
+            );
+            CREATE INDEX events_status_created_at_idx ON events (status, created_at);
+
+            CREATE TABLE fragments (
+                id UUID PRIMARY KEY,
+                event_id UUID NOT NULL REFERENCES events (id),
+                page INTEGER CHECK (page > 0),
+                ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+                text TEXT NOT NULL,
+                UNIQUE (event_id, ordinal),
+                UNIQUE (id, event_id)
+            );
+
+            CREATE TABLE facts (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                event_id UUID NOT NULL REFERENCES events (id),
+                fragment_id UUID NOT NULL,
+                text TEXT NOT NULL,
+                topics TEXT[] NOT NULL DEFAULT '{}',
+                factors TEXT[] NOT NULL DEFAULT '{}',
+                industries TEXT[] NOT NULL DEFAULT '{}',
+                regions TEXT[] NOT NULL DEFAULT '{}',
+                FOREIGN KEY (fragment_id, event_id) REFERENCES fragments (id, event_id)
+            );
+            CREATE INDEX facts_event_id_idx ON facts (event_id);
+            CREATE INDEX facts_fragment_id_idx ON facts (fragment_id);
+
+            CREATE TABLE insights (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies (company_id),
+                event_id UUID NOT NULL REFERENCES events (id),
+                materials_version BIGINT NOT NULL CHECK (materials_version > 0),
+                payload JSONB NOT NULL,
+                cost_rub NUMERIC NOT NULL DEFAULT 0 CHECK (cost_rub >= 0),
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (company_id, event_id, materials_version)
+            );
+            CREATE INDEX insights_event_id_idx ON insights (event_id);
+
+            CREATE TABLE insight_steps (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                insight_id UUID NOT NULL REFERENCES insights (id),
+                step_no INTEGER NOT NULL CHECK (step_no >= 0),
+                kind TEXT NOT NULL,
+                payload JSONB NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (insight_id, step_no)
+            );
+
+            CREATE TABLE dialog_messages (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                insight_id UUID NOT NULL REFERENCES insights (id),
+                role TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX dialog_messages_insight_created_at_idx ON dialog_messages (insight_id, created_at);
+
+            CREATE TABLE feedback (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                insight_id UUID NOT NULL REFERENCES insights (id),
+                user_id TEXT NOT NULL,
+                value SMALLINT NOT NULL CHECK (value IN (-1, 1)),
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (insight_id, user_id)
+            );
+
+            CREATE TABLE user_company_access (
+                user_id TEXT NOT NULL,
+                company_id TEXT NOT NULL REFERENCES companies (company_id),
+                PRIMARY KEY (user_id, company_id)
+            );
+            CREATE INDEX user_company_access_company_id_idx ON user_company_access (company_id);
+
+            COMMENT ON TABLE events IS 'Событие, загруженное для анализа.';
+            COMMENT ON COLUMN events.id IS 'Идентификатор события.';
+            COMMENT ON COLUMN events.title IS 'Заголовок события.';
+            COMMENT ON COLUMN events.source_type IS 'Тип исходного материала: текст, ссылка или PDF.';
+            COMMENT ON COLUMN events.source_ref IS 'Исходный текст, URL или ссылка на сохранённый PDF.';
+            COMMENT ON COLUMN events.status IS 'Текущее состояние обработки события.';
+            COMMENT ON COLUMN events.created_at IS 'Время создания события.';
+            COMMENT ON COLUMN events.materials_version IS 'Версия материалов для проверки актуальности инсайтов.';
+            COMMENT ON TABLE fragments IS 'Фрагмент исходного материала события.';
+            COMMENT ON COLUMN fragments.id IS 'Идентификатор фрагмента, общий с точкой в Qdrant.';
+            COMMENT ON COLUMN fragments.event_id IS 'Событие, которому принадлежит фрагмент.';
+            COMMENT ON COLUMN fragments.page IS 'Номер страницы PDF; отсутствует для текста и URL.';
+            COMMENT ON COLUMN fragments.ordinal IS 'Порядковый номер фрагмента внутри события, начиная с нуля.';
+            COMMENT ON COLUMN fragments.text IS 'Текст фрагмента исходного материала.';
+            COMMENT ON TABLE facts IS 'Факт, извлечённый из фрагмента материала.';
+            COMMENT ON COLUMN facts.id IS 'Идентификатор извлечённого факта.';
+            COMMENT ON COLUMN facts.event_id IS 'Событие, к которому относится факт.';
+            COMMENT ON COLUMN facts.fragment_id IS 'Фрагмент того же события, подтверждающий факт.';
+            COMMENT ON COLUMN facts.text IS 'Текст подтверждённого факта.';
+            COMMENT ON COLUMN facts.topics IS 'Темы, к которым относится факт.';
+            COMMENT ON COLUMN facts.factors IS 'Факторы влияния на бизнес.';
+            COMMENT ON COLUMN facts.industries IS 'Отрасли, затронутые фактом.';
+            COMMENT ON COLUMN facts.regions IS 'Регионы, затронутые фактом.';
+            COMMENT ON TABLE insights IS 'Сохранённый разбор события для компании с версией материалов.';
+            COMMENT ON COLUMN insights.id IS 'Идентификатор персонального разбора.';
+            COMMENT ON COLUMN insights.company_id IS 'Компания, для которой подготовлен разбор.';
+            COMMENT ON COLUMN insights.event_id IS 'Событие, влияние которого анализируется.';
+            COMMENT ON COLUMN insights.materials_version IS 'Версия материалов, использованная при подготовке разбора.';
+            COMMENT ON COLUMN insights.payload IS 'Результат анализа с фактами, выводами и источниками.';
+            COMMENT ON COLUMN insights.cost_rub IS 'Стоимость подготовки разбора в рублях.';
+            COMMENT ON COLUMN insights.created_at IS 'Время сохранения разбора.';
+            COMMENT ON TABLE insight_steps IS 'Шаг анализа, сохранённый для трассировки разбора.';
+            COMMENT ON COLUMN insight_steps.id IS 'Идентификатор шага анализа.';
+            COMMENT ON COLUMN insight_steps.insight_id IS 'Разбор, в рамках которого выполнен шаг.';
+            COMMENT ON COLUMN insight_steps.step_no IS 'Порядковый номер шага внутри разбора, начиная с нуля.';
+            COMMENT ON COLUMN insight_steps.kind IS 'Вид шага анализа или вызванного инструмента.';
+            COMMENT ON COLUMN insight_steps.payload IS 'Входные данные и результат выполнения шага.';
+            COMMENT ON COLUMN insight_steps.created_at IS 'Время сохранения шага анализа.';
+            COMMENT ON TABLE dialog_messages IS 'Сообщение диалога в контексте персонального разбора.';
+            COMMENT ON COLUMN dialog_messages.id IS 'Идентификатор сообщения диалога.';
+            COMMENT ON COLUMN dialog_messages.insight_id IS 'Разбор, в контексте которого ведётся диалог.';
+            COMMENT ON COLUMN dialog_messages.role IS 'Роль автора сообщения в диалоге.';
+            COMMENT ON COLUMN dialog_messages.text IS 'Текст сообщения пользователя или ответа системы.';
+            COMMENT ON COLUMN dialog_messages.created_at IS 'Время сохранения сообщения.';
+            COMMENT ON TABLE feedback IS 'Оценка пользователем персонального разбора.';
+            COMMENT ON COLUMN feedback.id IS 'Идентификатор пользовательской оценки.';
+            COMMENT ON COLUMN feedback.insight_id IS 'Разбор, которому выставлена оценка.';
+            COMMENT ON COLUMN feedback.user_id IS 'Идентификатор пользователя из claim sub в Keycloak.';
+            COMMENT ON COLUMN feedback.value IS 'Оценка полезности: 1 — полезно, -1 — неполезно.';
+            COMMENT ON COLUMN feedback.created_at IS 'Время сохранения оценки.';
+            COMMENT ON TABLE user_company_access IS 'Право пользователя работать с данными компании.';
+            COMMENT ON COLUMN user_company_access.user_id IS 'Идентификатор пользователя из claim sub в Keycloak.';
+            COMMENT ON COLUMN user_company_access.company_id IS 'Обезличенный идентификатор доступной компании.';
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261023-02" author="v.ledvanov">
+        <comment>Описание существующих таблиц компаний, связей и платежей.</comment>
+        <sql>
+            COMMENT ON TABLE companies IS 'Профиль компании.';
+            COMMENT ON COLUMN companies.company_id IS 'Обезличенный идентификатор компании.';
+            COMMENT ON COLUMN companies.profile_status IS 'Статус профиля компании.';
+            COMMENT ON COLUMN companies.organization_type IS 'Тип организации.';
+            COMMENT ON COLUMN companies.ownership_type IS 'Форма собственности.';
+            COMMENT ON COLUMN companies.age_range IS 'Диапазон возраста компании в годах.';
+            COMMENT ON COLUMN companies.business_lifecycle_stage IS 'Этап развития компании.';
+            COMMENT ON COLUMN companies.main_industry_code IS 'Код основного ОКВЭД.';
+            COMMENT ON COLUMN companies.main_industry_name IS 'Наименование основного вида деятельности.';
+            COMMENT ON COLUMN companies.negative_mark IS 'Признак негативной отметки.';
+            COMMENT ON COLUMN companies.employee_count_range_fns IS 'Диапазон численности работников по данным ФНС.';
+            COMMENT ON COLUMN companies.employee_count_range_spark IS 'Диапазон численности работников по данным СПАРК.';
+            COMMENT ON COLUMN companies.client_type IS 'Тип клиента.';
+            COMMENT ON COLUMN companies.has_settlement_account IS 'Признак расчётно-кассового обслуживания.';
+            COMMENT ON COLUMN companies.has_bank_guarantee IS 'Признак банковской гарантии.';
+            COMMENT ON COLUMN companies.has_loan IS 'Признак кредитного продукта.';
+            COMMENT ON COLUMN companies.has_leasing IS 'Признак лизинга.';
+            COMMENT ON COLUMN companies.has_deposit IS 'Признак депозитного продукта.';
+            COMMENT ON COLUMN companies.has_payroll_project IS 'Признак зарплатного проекта.';
+            COMMENT ON COLUMN companies.has_foreign_trade IS 'Признак внешнеторговой деятельности.';
+            COMMENT ON COLUMN companies.foreign_trade_countries IS 'Страны внешнеторговой деятельности.';
+            COMMENT ON COLUMN companies.has_factoring IS 'Признак факторинга.';
+            COMMENT ON COLUMN companies.revenue IS 'Выручка компании.';
+            COMMENT ON COLUMN companies.group_id IS 'Обезличенный идентификатор группы компаний.';
+            COMMENT ON COLUMN companies.city IS 'Город компании.';
+            COMMENT ON COLUMN companies.region IS 'Регион компании.';
+            COMMENT ON TABLE person_company_links IS 'Связь физического лица с компанией.';
+            COMMENT ON COLUMN person_company_links.id IS 'Идентификатор записи связи.';
+            COMMENT ON COLUMN person_company_links.person_id IS 'Обезличенный идентификатор физического лица.';
+            COMMENT ON COLUMN person_company_links.company_id IS 'Компания, связанная с физическим лицом.';
+            COMMENT ON COLUMN person_company_links.city_name IS 'Город из записи связи.';
+            COMMENT ON COLUMN person_company_links.regional_center_name IS 'Региональный центр из записи связи.';
+            COMMENT ON TABLE company_payment_summaries IS 'Агрегированные платежи между компаниями.';
+            COMMENT ON COLUMN company_payment_summaries.id IS 'Идентификатор платёжного агрегата.';
+            COMMENT ON COLUMN company_payment_summaries.payer_company_id IS 'Компания-плательщик.';
+            COMMENT ON COLUMN company_payment_summaries.recipient_company_id IS 'Компания-получатель.';
+            COMMENT ON COLUMN company_payment_summaries.total_payment_amount IS 'Общая сумма платежей между плательщиком и получателем.';
+            COMMENT ON COLUMN company_payment_summaries.payment_count IS 'Количество платежей между плательщиком и получателем.';
+        </sql>
+    </changeSet>
 </databaseChangeLog>
