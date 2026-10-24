@@ -3,6 +3,7 @@ import fitz
 
 MODE = os.getenv("ML_EMBEDDER", "stub")
 MAX_WORDS = 250
+OCR_LANGUAGE = os.getenv("ML_OCR_LANGUAGE", "rus+eng")
 
 _model = None
 if MODE != "stub":
@@ -29,12 +30,26 @@ def analyze_pdf(data: bytes) -> dict:
         raise ValueError("Не удалось прочитать PDF")
 
     chunks = []
-    for page_number, page in enumerate(doc, start=1):
-        text = page.get_text().strip()
-        if not text:
-            continue
-        for piece in split_into_chunks(text):
-            chunks.append({"ordinal": len(chunks), "page": page_number, "text": piece})
+    try:
+        for page_number, page in enumerate(doc, start=1):
+            text = page.get_text().strip()
+            if not text and page.get_images():
+                try:
+                    text_page = page.get_textpage_ocr(language=OCR_LANGUAGE, dpi=200, full=True)
+                    text = page.get_text(textpage=text_page).strip()
+                except Exception as error:
+                    raise ValueError(
+                        "Не удалось распознать текст на странице "
+                        f"{page_number}. Проверьте установку Tesseract и языковых данных OCR."
+                    ) from error
+            if not text:
+                continue
+            for piece in split_into_chunks(text):
+                chunks.append({"ordinal": len(chunks), "page": page_number, "text": piece})
+    except ValueError:
+        raise
+    except Exception as error:
+        raise ValueError("Не удалось извлечь текст из PDF") from error
     doc.close()
 
     if not chunks:
