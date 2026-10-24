@@ -3,6 +3,7 @@ package alpha.business.insight.core.config;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -28,6 +29,7 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs",
                                 "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
                         .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/events").hasRole("SYSTEM_ADMIN")
                         .anyRequest().hasAnyRole("SYSTEM_ADMIN", "COMPANY_DIRECTOR"))
                 .oauth2ResourceServer(server ->
                         server.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
