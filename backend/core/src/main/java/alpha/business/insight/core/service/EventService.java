@@ -1,17 +1,20 @@
 package alpha.business.insight.core.service;
 
 import alpha.business.insight.core.dto.EventCreateDto;
+import alpha.business.insight.core.dto.EventListItem;
 import alpha.business.insight.core.dto.EventReadDto;
 import alpha.business.insight.core.model.Event;
+import alpha.business.insight.core.model.EventSourceType;
+import alpha.business.insight.core.model.EventStatus;
 import alpha.business.insight.core.repository.EventRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -43,12 +46,31 @@ public class EventService {
     }
 
     /**
-     * Возвращает события от новых к старым; идентификатор определяет порядок при равных датах.
+     * Возвращает страницу кратких сведений с учётом непустых фильтров.
      */
-    public List<EventReadDto> getAll() {
-        return repository.findAll(Sort.by(Sort.Direction.DESC, "createdAt", "id")).stream()
-                .map(EventReadDto::from)
-                .toList();
+    public Page<EventListItem> getEvents(String title, String status, String sourceType, Pageable pageable) {
+        String normalizedTitle = normalizeFilter(title);
+        if (normalizedTitle != null) {
+            normalizedTitle = normalizedTitle.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+        }
+        return repository.findEvents(normalizedTitle, parseFilter(status, EventStatus.class),
+                parseFilter(sourceType, EventSourceType.class), pageable);
+    }
+
+    private static String normalizeFilter(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static <E extends Enum<E>> E parseFilter(String value, Class<E> type) {
+        String normalized = normalizeFilter(value);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return Enum.valueOf(type, normalized);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Неизвестное значение фильтра: " + value);
+        }
     }
 
     /**

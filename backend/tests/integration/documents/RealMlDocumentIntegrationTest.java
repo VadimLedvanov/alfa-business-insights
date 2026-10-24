@@ -262,7 +262,7 @@ class RealMlDocumentIntegrationTest extends RealStackE2eTest {
                 });
     }
 
-    /** Проверяет отказ Python ML для PDF без текста, очистку данных и спорный HTTP-контракт. */
+    /** Проверяет HTTP 422 от Python ML для PDF без текста и очистку данных. */
     @Test
     void TestIntegrationRejectTextlessPdfWithoutArtifacts() throws Exception {
         // Подготовка: создать корректный PDF с физической страницей без текста.
@@ -334,11 +334,18 @@ class RealMlDocumentIntegrationTest extends RealStackE2eTest {
 
                     Allure.step(
                             "Проверить опубликованный HTTP-контракт отказа ML",
-                            () ->
-                                    assertThat(response.statusCode())
-                                            .as(
-                                                    "Контракт ожидает 502; текущая Feign-обработка отдаёт 503")
-                                            .isEqualTo(502));
+                            () -> {
+                                assertThat(response.statusCode())
+                                        .as("Пустой PDF должен завершиться HTTP 422")
+                                        .isEqualTo(422);
+                                assertThat(response.jsonPath().getBoolean("retryable"))
+                                        .as(
+                                                "Отказ из-за отсутствия текста не должен быть повторяемым")
+                                        .isFalse();
+                                assertThat(response.jsonPath().getString("message"))
+                                        .as("Сообщение должно объяснять отказ для пустого PDF")
+                                        .contains("извлечь текст");
+                            });
                 });
     }
 

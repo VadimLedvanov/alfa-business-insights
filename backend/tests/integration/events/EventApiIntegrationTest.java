@@ -2,9 +2,11 @@ package alpha.business.insight.core.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
 import alpha.business.insight.core.qa.connectors.MockMvcRestAssured;
@@ -257,7 +259,7 @@ class EventApiIntegrationTest {
     /** Возвращает события в заданном порядке. */
     @ParameterizedTest
     @ValueSource(strings = {"SYSTEM_ADMIN", "COMPANY_DIRECTOR"})
-    @Step("Возвращает события в заданном порядке")
+    @Step("Возвращает страницу событий в заданном порядке")
     void givenEvents_whenListAndRead_thenReturnNewestFirstWithStableOrder(String role)
             throws Exception {
         // Подготовка
@@ -282,11 +284,17 @@ class EventApiIntegrationTest {
                 .get("/api/events")
                 .then()
                 .statusCode(200)
-                .body("", hasSize(3))
-                .body("[0].id", equalTo(third.toString()))
-                .body("[1].id", equalTo(second.toString()))
-                .body("[2].id", equalTo(first.toString()))
-                .body("[2].status", equalTo("FAILED"));
+                .body("content", hasSize(3))
+                .body("content[0].id", equalTo(third.toString()))
+                .body("content[1].id", equalTo(second.toString()))
+                .body("content[2].id", equalTo(first.toString()))
+                .body("content[2].status", equalTo("FAILED"))
+                .body("content[0].title", equalTo("Новое PDF"))
+                .body("content[0].sourceType", equalTo("PDF"))
+                .body("content[0].createdAt", notNullValue())
+                .body("content[0]", not(hasKey("sourceRef")))
+                .body("content[0]", not(hasKey("materialsVersion")))
+                .body("totalElements", equalTo(3));
         request()
                 .postProcessors(role(role))
                 .when()
@@ -297,9 +305,9 @@ class EventApiIntegrationTest {
                 .body("status", equalTo("READY"));
     }
 
-    /** Возвращает пустой список событий. */
+    /** Возвращает пустую страницу событий. */
     @Test
-    @Step("Возвращает пустой список событий")
+    @Step("Возвращает пустую страницу событий")
     void givenNoEvents_whenList_thenReturnEmptyArray() throws Exception {
         request()
                 .postProcessors(role("COMPANY_DIRECTOR"))
@@ -307,7 +315,127 @@ class EventApiIntegrationTest {
                 .get("/api/events")
                 .then()
                 .statusCode(200)
-                .body("", hasSize(0));
+                .body("content", hasSize(0))
+                .body("number", equalTo(0))
+                .body("size", equalTo(20))
+                .body("totalElements", equalTo(0));
+    }
+
+    /** Объединяет фильтры и сохраняет число результатов за пределами страницы. */
+    @Test
+    @Step("Объединяет фильтры событий и сохраняет общее число результатов")
+    void givenFiltersAndPage_whenList_thenCombineFiltersAndPreserveTotals() {
+        // Подготовка: создаёт события с разными заголовками, статусами и типами источника.
+        insertListEvents();
+
+        // Действие и проверки: совмещает фильтры и получает вторую страницу результата.
+        request()
+                .postProcessors(role("COMPANY_DIRECTOR"))
+                .queryParam("title", "  rate  ")
+                .queryParam("status", " READY ")
+                .queryParam("sourceType", " TEXT ")
+                .queryParam("page", "1")
+                .queryParam("size", "1")
+                .queryParam("sort", "title,asc")
+                .when()
+                .get("/api/events")
+                .then()
+                .statusCode(200)
+                .body("content", hasSize(1))
+                .body("content[0].title", equalTo("Rate B"))
+                .body("number", equalTo(1))
+                .body("size", equalTo(1))
+                .body("totalElements", equalTo(2))
+                .body("totalPages", equalTo(2));
+
+        // Проверки: страница за пределами результата пуста, но totalElements сохраняется.
+        request()
+                .postProcessors(role("SYSTEM_ADMIN"))
+                .queryParam("title", "rate")
+                .queryParam("status", "READY")
+                .queryParam("sourceType", "TEXT")
+                .queryParam("page", "5")
+                .queryParam("size", "1")
+                .when()
+                .get("/api/events")
+                .then()
+                .statusCode(200)
+                .body("content", hasSize(0))
+                .body("totalElements", equalTo(2));
+    }
+
+    /** Игнорирует пустые и пробельные значения фильтров событий. */
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "\t"})
+    @Step("Игнорирует пустые фильтры событий")
+    void givenBlankFilters_whenList_thenIgnoreFilters(String filter) {
+        // Подготовка
+        insertListEvents();
+
+        // Действие и проверки
+        request()
+                .postProcessors(role("SYSTEM_ADMIN"))
+                .queryParam("title", filter)
+                .queryParam("status", filter)
+                .queryParam("sourceType", filter)
+                .when()
+                .get("/api/events")
+                .then()
+                .statusCode(200)
+                .body("totalElements", equalTo(5));
+    }
+
+    /** Ищет специальные символы заголовка как литералы, а не SQL-шаблоны. */
+    @Test
+    @Step("Ищет специальные символы заголовка буквально")
+    void givenWildcardCharacters_whenList_thenMatchLiteralTitle() {
+        // Подготовка
+        insertListEvents();
+        jdbc.update(
+                """
+                INSERT INTO events (id, title, source_type, source_ref, status)
+                VALUES (?, 'Rate!%_special', 'TEXT', 'Текст', 'READY')
+                """,
+                UUID.fromString("00000000-0000-0000-0000-000000000006"));
+
+        // Действие и проверки
+        request()
+                .postProcessors(role("SYSTEM_ADMIN"))
+                .queryParam("title", "!%_")
+                .when()
+                .get("/api/events")
+                .then()
+                .statusCode(200)
+                .body("content[0].title", equalTo("Rate!%_special"))
+                .body("totalElements", equalTo(1));
+    }
+
+    /** Отклоняет неизвестные значения фильтров списка событий. */
+    @ParameterizedTest
+    @CsvSource({"status,UNKNOWN", "sourceType,OTHER"})
+    @Step("Отклоняет неизвестные значения фильтров событий")
+    void givenInvalidFilter_whenList_thenBadRequest(String parameter, String value) {
+        // Действие и проверки
+        request()
+                .postProcessors(role("SYSTEM_ADMIN"))
+                .queryParam(parameter, value)
+                .when()
+                .get("/api/events")
+                .then()
+                .statusCode(400);
+    }
+
+    /** Создаёт фиксированный набор событий для проверки фильтрации и пагинации. */
+    private void insertListEvents() {
+        jdbc.update(
+                """
+                INSERT INTO events (id, title, source_type, source_ref, status)
+                VALUES ('00000000-0000-0000-0000-000000000001', 'Rate A', 'TEXT', 'Текст', 'READY'),
+                       ('00000000-0000-0000-0000-000000000002', 'Rate B', 'TEXT', 'Текст', 'READY'),
+                       ('00000000-0000-0000-0000-000000000003', 'Rate C', 'TEXT', 'Текст', 'FAILED'),
+                       ('00000000-0000-0000-0000-000000000004', 'Rate D', 'URL', 'url', 'READY'),
+                       ('00000000-0000-0000-0000-000000000005', 'Other', 'TEXT', 'Текст', 'READY')
+                """);
     }
 
     /** Возвращает 404 для неизвестного события. */

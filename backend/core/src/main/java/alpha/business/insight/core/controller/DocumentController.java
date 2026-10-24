@@ -68,6 +68,7 @@ public class DocumentController {
     @ApiResponse(responseCode = "400", description = "Пустой файл или некорректные параметры")
     @ApiResponse(responseCode = "413", description = "Файл превышает 50 МБ")
     @ApiResponse(responseCode = "415", description = "Файл не имеет сигнатуры PDF")
+    @ApiResponse(responseCode = "422", description = "ML не смог извлечь текст из PDF")
     @ApiResponse(responseCode = "502", description = "Некорректный ответ ML")
     @ApiResponse(responseCode = "503", description = "ML или Qdrant недоступен; запрос можно повторить")
     public ResponseEntity<DocumentMetadata> upload(

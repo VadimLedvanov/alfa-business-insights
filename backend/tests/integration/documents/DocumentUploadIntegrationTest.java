@@ -28,6 +28,9 @@ import alpha.business.insight.core.qa.helpers.TestEvidence;
 import alpha.business.insight.core.service.DocumentService;
 import alpha.business.insight.core.service.DocumentStorage;
 import alpha.business.insight.core.service.DocumentVectorStore;
+import feign.FeignException;
+import feign.Request;
+import feign.Response;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.grpc.JsonWithInt.Value;
 import io.qdrant.client.grpc.Points.RetrievedPoint;
@@ -418,6 +421,57 @@ class DocumentUploadIntegrationTest {
                 .then()
                 .statusCode(502);
         assertThat(documentCount()).isZero();
+        assertNoFiles();
+    }
+
+    /** Проверяет передачу отказа ML и недоступности ML без сохранения артефактов. */
+    @ParameterizedTest
+    @ValueSource(ints = {422, 503})
+    void mlRejectsPdfOrIsUnavailableReturnsStatusAndCleansArtifacts(int mlStatus) throws Exception {
+        // Подготовка: смоделировать отказ ML с деталями ответа.
+        var mlRequest =
+                Request.create(
+                        Request.HttpMethod.POST,
+                        "http://ml/documents/test/analyze",
+                        Map.of(),
+                        new byte[0],
+                        StandardCharsets.UTF_8,
+                        null);
+        var mlResponse =
+                Response.builder()
+                        .request(mlRequest)
+                        .status(mlStatus)
+                        .headers(Map.of())
+                        .body("{\"detail\":\"В PDF нет текста\"}", StandardCharsets.UTF_8)
+                        .build();
+        when(analyzer.analyze(any(), any()))
+                .thenThrow(FeignException.errorStatus("analyze", mlResponse));
+
+        // Действие: загрузить PDF от имени системного администратора.
+        var response =
+                request()
+                        .multiPart("file", "report.pdf", PDF, "application/pdf")
+                        .postProcessors(
+                                jwt().authorities(new SimpleGrantedAuthority("ROLE_SYSTEM_ADMIN")))
+                        .when()
+                        .post("/api/admin/documents")
+                        .then()
+                        .statusCode(mlStatus)
+                        .body("retryable", equalTo(mlStatus == 503))
+                        .extract()
+                        .response();
+
+        // Проверить содержимое ошибки и отсутствие побочных эффектов.
+        if (mlStatus == 422) {
+            assertThat(response.jsonPath().getString("message"))
+                    .as("Сообщение об отказе ML при HTTP 422")
+                    .contains("извлечь текст");
+        } else {
+            assertThat(response.jsonPath().getString("code"))
+                    .as("Код недоступности ML при HTTP 503")
+                    .isEqualTo("ML_UNAVAILABLE");
+        }
+        assertThat(documentCount()).as("Записи PostgreSQL после отказа ML").isZero();
         assertNoFiles();
     }
 

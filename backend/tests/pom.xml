@@ -227,6 +227,10 @@
                         <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
                         <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
                         <spring.ai.model.chat>none</spring.ai.model.chat>
+                        <!-- Изолированные тесты не требуют внешних ML/LLM credentials. -->
+                        <ML_STUB>true</ML_STUB>
+                        <ML_URL>http://127.0.0.1:1</ML_URL>
+                        <OPENAI_API_KEY>qa-local-unused</OPENAI_API_KEY>
                         <spring.cloud.openfeign.client.config.default.capabilities>alpha.business.insight.core.qa.connectors.AllureFeignCapability</spring.cloud.openfeign.client.config.default.capabilities>
                     </systemPropertyVariables>
                 </configuration>

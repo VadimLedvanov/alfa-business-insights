@@ -1,18 +1,25 @@
 package alpha.business.insight.core.controller;
 
 import alpha.business.insight.core.dto.CompanyContext;
+import alpha.business.insight.core.dto.CompanyListItem;
 import alpha.business.insight.core.service.CompanyContextService;
 import alpha.business.insight.core.service.InsightService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -21,6 +28,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class CompanyController {
     private final CompanyContextService service;
     private final InsightService insights;
+
+    @GetMapping
+    @Operation(summary = "Список компаний с фильтрацией и пагинацией",
+            description = "Необязательные фильтры объединяются через И. Пустые фильтры игнорируются. "
+                    + "По умолчанию: 20 компаний на странице, сортировка по id по возрастанию.")
+    @ApiResponse(responseCode = "200", description = "Страница кратких сведений о компаниях")
+    public Page<CompanyListItem> getCompanies(
+            @Parameter(description = "Часть обезличенного идентификатора без учёта регистра")
+            @RequestParam(required = false) String companyId,
+            @Parameter(description = "Город: точное совпадение без учёта регистра")
+            @RequestParam(required = false) String city,
+            @Parameter(description = "Код основного ОКВЭД: точное совпадение")
+            @RequestParam(required = false) String mainIndustryCode,
+            @ParameterObject @PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        return service.getCompanies(companyId, city, mainIndustryCode, pageable);
+    }
 
     @GetMapping("/{id}")
     @Operation(summary = "Контекст компании: профиль, группа и крупнейшие контрагенты",

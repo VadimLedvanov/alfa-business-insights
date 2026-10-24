@@ -6,6 +6,7 @@ import alpha.business.insight.core.ml.DocumentAnalyzer;
 import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.repository.DocumentRepository;
 import alpha.business.insight.core.model.KnowledgeDocument;
+import feign.FeignException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -125,13 +126,23 @@ public class DocumentService {
     }
 
     /**
-     * Недоступность ML даёт HTTP 503; некорректный ответ — HTTP 502.
+     * Отказ ML обработать PDF даёт HTTP 422, недоступность — HTTP 503, некорректный ответ — HTTP 502.
      */
     private DocumentAnalysis analyze(UUID id, byte[] pdf) {
         DocumentAnalysis result;
         try {
             result = analyzer.analyze(id, pdf);
         } catch (RuntimeException exception) {
+            if (exception instanceof FeignException failure) {
+                log.warn("Ошибка обработки PDF {} в ML: HTTP {}", id, failure.status());
+                if (failure.status() == 422) {
+                    throw new ResponseStatusException(HttpStatus.valueOf(422),
+                            "Не удалось извлечь текст из PDF. Проверьте, что файл не повреждён и содержит "
+                                    + "текстовый слой. Для сканов требуется распознавание текста (OCR).", exception);
+                }
+            } else {
+                log.warn("Ошибка вызова ML для PDF {}", id, exception);
+            }
             throw new ComponentUnavailableException("ML");
         }
         try {
