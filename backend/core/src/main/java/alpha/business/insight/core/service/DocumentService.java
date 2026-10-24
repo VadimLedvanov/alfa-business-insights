@@ -29,9 +29,9 @@ import java.util.UUID;
 @Service
 public class DocumentService {
     /**
-     * Максимальный размер оригинала PDF: 20 МБ.
+     * Максимальный размер оригинала PDF: 50 МБ.
      */
-    private static final int MAX_BYTES = 20 * 1024 * 1024;
+    private static final int MAX_BYTES = 50 * 1024 * 1024;
 
     /**
      * JPA-хранилище метаданных успешно загруженных документов.
@@ -73,7 +73,7 @@ public class DocumentService {
      * Сохраняет PDF и чанки, затем завершает транзакцию записи метаданных через JPA-репозиторий.
      * При обычной ошибке пытается удалить файл и уже записанные точки Qdrant.
      *
-     * @param file исходный PDF размером до 20 МБ
+     * @param file исходный PDF размером до 50 МБ
      * @param title название материала; при отсутствии используется имя файла
      * @param publicationDate дата публикации либо null
      * @return метаданные успешно сохранённого и проиндексированного документа
@@ -169,12 +169,12 @@ public class DocumentService {
      */
     private static byte[] readPdf(MultipartFile file) {
         if (file.getSize() > MAX_BYTES) {
-            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 20 МБ");
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 50 МБ");
         }
         try (InputStream input = file.getInputStream()) {
             byte[] pdf = input.readNBytes(MAX_BYTES + 1);
             if (pdf.length > MAX_BYTES) {
-                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 20 МБ");
+                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 50 МБ");
             }
             if (pdf.length == 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "PDF не должен быть пустым");

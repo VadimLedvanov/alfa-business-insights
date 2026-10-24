@@ -24,8 +24,8 @@ spring:
           type: JSON_OBJECT
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 21MB
+      max-file-size: 50MB
+      max-request-size: 51MB
   cloud:
     openfeign:
       client:
