@@ -1,7 +1,7 @@
 import os
 import fitz
 
-MODE = os.getenv("ML_EMBEDDER", "stub")
+MODE = os.getenv("ML_EMBEDDING_MODEL") or "stub"
 MAX_WORDS = 250
 
 _model = None
