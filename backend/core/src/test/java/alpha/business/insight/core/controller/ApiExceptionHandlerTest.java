@@ -44,7 +44,7 @@ class ApiExceptionHandlerTest {
     void oversizedMultipartUsesSameFormat() throws Exception {
         mvc.perform(get("/errors/upload")).andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"))
-                .andExpect(jsonPath("$.message").value("Размер PDF превышает 20 МБ"))
+                .andExpect(jsonPath("$.message").value("Размер PDF превышает 50 МБ"))
                 .andExpect(jsonPath("$.retryable").value(false));
     }
 
@@ -71,7 +71,7 @@ class ApiExceptionHandlerTest {
         @GetMapping("/errors/unexpected")
         void unexpected() { throw new IllegalStateException("secret"); }
         @GetMapping("/errors/upload")
-        void upload() { throw new MaxUploadSizeExceededException(20 * 1024 * 1024); }
+        void upload() { throw new MaxUploadSizeExceededException(50 * 1024 * 1024); }
         @PostMapping("/errors/body")
         void body(@RequestBody java.util.Map<String, Object> body) {}
         @GetMapping("/errors/id/{id}")

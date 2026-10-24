@@ -122,9 +122,14 @@ class DocumentUploadIntegrationTest {
                 .andExpect(jsonPath("$.components.schemas.DocumentMetadata.description").isNotEmpty())
                 .andExpect(jsonPath("$.components.schemas.DocumentMetadata.properties.chunkCount.description").isNotEmpty())
                 .andExpect(jsonPath("$.components.schemas.DocumentMetadata.properties.sha256.maxLength").value(64))
+                .andExpect(jsonPath("$.components.schemas.DocumentMetadata.properties.sizeBytes.maximum").value(52428800))
                 .andExpect(jsonPath("$.components.schemas.DocumentMetadata.properties.filePath").doesNotExist())
                 .andExpect(jsonPath("$.components.schemas.DocumentMetadata.properties.factCount").doesNotExist())
                 .andExpect(jsonPath("$.components.schemas.DocumentMetadata.properties.fragmentCount").doesNotExist())
+                .andExpect(jsonPath("$.paths['/admin/documents'].post.description").value(
+                        org.hamcrest.Matchers.containsString("Максимум 50 МБ")))
+                .andExpect(jsonPath("$.paths['/admin/documents'].post.responses['413'].description")
+                        .value("Файл превышает 50 МБ"))
                 .andExpect(jsonPath("$.paths['/admin/documents'].post.parameters[?(@.name == 'title')].description").isNotEmpty());
     }
 
@@ -196,9 +201,22 @@ class DocumentUploadIntegrationTest {
         assertThat(documentCount()).isZero();
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {20 * 1024 * 1024 + 1, 50 * 1024 * 1024})
+    void acceptsPdfAbovePreviousLimitAndAt50Mb(int size) throws Exception {
+        byte[] content = new byte[size];
+        System.arraycopy(PDF, 0, content, 0, PDF.length);
+        mvc.perform(multipart("/api/admin/documents").contextPath("/api")
+                        .file(new MockMultipartFile("file", "large.pdf", "application/pdf", content))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_SYSTEM_ADMIN"))))
+                .andExpect(status().isCreated());
+        assertThat(Files.size(STORAGE.resolve(storage.relativePath(lastDocumentId.get())))).isEqualTo(size);
+        assertThat(documentCount()).isEqualTo(1);
+    }
+
     @Test
     void rejectsEmptyNonPdfAndOversizedFileBeforeCreatingArtifacts() throws Exception {
-        for (int size : List.of(0, 3, 20 * 1024 * 1024 + 1)) {
+        for (int size : List.of(0, 3, 50 * 1024 * 1024 + 1)) {
             mvc.perform(multipart("/api/admin/documents").contextPath("/api")
                             .file(new MockMultipartFile("file", "test.pdf", "application/pdf", new byte[size]))
                             .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_SYSTEM_ADMIN"))))
