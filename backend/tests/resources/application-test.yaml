@@ -2,6 +2,9 @@
 # Supply the missing JWT configuration without replacing the decoder or disabling security.
 # Real HTTP E2E tests override both endpoints with their live Keycloak container.
 spring:
+  ai:
+    model:
+      chat: none
   security:
     oauth2:
       resourceserver:

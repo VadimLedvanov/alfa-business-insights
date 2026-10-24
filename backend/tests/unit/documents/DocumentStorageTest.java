@@ -51,9 +51,12 @@ class DocumentStorageTest {
                             "file", fileDetails(root.resolve(storage.relativePath(id))),
                             "readBytes", storage.read(id).getContentAsByteArray());
                 }, actual -> {
-                    assertThat(actual.get("relativePath")).isEqualTo(SHARDED_RELATIVE_PATH);
-                    assertThat(root.resolve(SHARDED_RELATIVE_PATH)).hasBinaryContent(original);
-                    assertThat(actual.get("readBytes")).isEqualTo(original);
+                    assertThat(actual.get("relativePath")).as("относительный путь документа в шардах")
+                            .isEqualTo(SHARDED_RELATIVE_PATH);
+                    assertThat(root.resolve(SHARDED_RELATIVE_PATH)).as("байты по шардированному пути")
+                            .hasBinaryContent(original);
+                    assertThat(actual.get("readBytes")).as("байты, прочитанные через хранилище")
+                            .isEqualTo(original);
                 });
     }
 
@@ -81,7 +84,8 @@ class DocumentStorageTest {
                 () -> storage.write(id, replacement), error -> {
                     assertThat(error).isInstanceOf(FileAlreadyExistsException.class);
                     TestEvidence.output("Существующий файл", fileDetails(root.resolve(storage.relativePath(id))));
-                    assertThat(storage.read(id).getContentAsByteArray()).isEqualTo(original);
+                    assertThat(storage.read(id).getContentAsByteArray()).as("исходные байты после отказа перезаписи")
+                            .isEqualTo(original);
                 });
     }
 
@@ -97,7 +101,8 @@ class DocumentStorageTest {
                     storage.delete(relativePath);
                     storage.delete(relativePath);
                     return filesUnderRoot();
-                }, actual -> assertThat(actual).isEmpty());
+                }, actual -> assertThat(actual).as("файлы после повторного удаления отсутствующего PDF")
+                        .isEmpty());
     }
 
     /** Проверяет отказ при попытке выйти за корневой каталог хранилища. */
@@ -124,7 +129,8 @@ class DocumentStorageTest {
         TestEvidence.step("Прочитать PDF, оставшийся в старом плоском формате",
                 List.of(new TestEvidence.Input("documentId", id),
                         new TestEvidence.Input("Файл в старом формате", fileDetails(root.resolve(id + ".pdf")))),
-                () -> storage.read(id).getContentAsByteArray(), actual -> assertThat(actual).isEqualTo(original));
+                () -> storage.read(id).getContentAsByteArray(), actual -> assertThat(actual)
+                        .as("байты PDF в прежнем плоском формате").isEqualTo(original));
     }
 
     /** Формирует фактические сведения о файле для вложения в Allure. */

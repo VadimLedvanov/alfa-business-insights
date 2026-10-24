@@ -42,8 +42,8 @@ public final class MockMvcEvidenceResultHandler implements ResultHandler {
         if (request.getQueryString() != null) summary.append('?').append(request.getQueryString());
         summary.append("\nHeaders:\n").append(HttpEvidence.headers(requestHeaders(request)))
                 .append("\nParameters:\n");
-        new TreeMap<>(request.getParameterMap()).forEach((name, values) -> summary.append(name).append('=')
-                .append(String.join(", ", values)).append('\n'));
+        new TreeMap<>(request.getParameterMap()).forEach((name, values) -> summary
+                .append(HttpEvidence.formField(name, values)).append('\n'));
         summary.append("Body:\n");
 
         if (request instanceof MockMultipartHttpServletRequest multipart) {
@@ -73,8 +73,8 @@ public final class MockMvcEvidenceResultHandler implements ResultHandler {
     /** Добавляет к сводке имена и размеры multipart-файлов. */
     private static void appendMultipartSummary(StringBuilder summary, MockMultipartHttpServletRequest request) {
         summary.append("Multipart form fields:\n");
-        new TreeMap<>(request.getParameterMap()).forEach((name, values) -> summary.append(name).append('=')
-                .append(String.join(", ", values)).append('\n'));
+        new TreeMap<>(request.getParameterMap()).forEach((name, values) -> summary
+                .append(HttpEvidence.formField(name, values)).append('\n'));
         summary.append("Multipart files:\n");
         new TreeMap<>(request.getMultiFileMap()).forEach((name, files) -> files.forEach(file -> summary
                 .append(name).append(": filename=").append(file.getOriginalFilename())

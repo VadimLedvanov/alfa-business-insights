@@ -72,20 +72,20 @@ class CsvImportServiceTest {
 
             // Проверяет отчёт, пример ошибки и строки, переданные в COPY.
             var paymentReport = report.files().get(2);
-            assertThat(paymentReport.read()).isEqualTo(2);
-            assertThat(paymentReport.accepted()).isEqualTo(1);
-            assertThat(paymentReport.rejected()).isEqualTo(1);
-            assertThat(paymentReport.errorSamples()).singleElement()
+            assertThat(paymentReport.read()).as("число прочитанных платёжных строк").isEqualTo(2);
+            assertThat(paymentReport.accepted()).as("число принятых платёжных строк").isEqualTo(1);
+            assertThat(paymentReport.rejected()).as("число отклонённых платёжных строк").isEqualTo(1);
+            assertThat(paymentReport.errorSamples()).as("пример ошибки PAY_AMT").singleElement()
                     .satisfies(error -> {
                         assertThat(error.recordNumber()).isEqualTo(1);
                         assertThat(error.reason()).isEqualTo("PAY_AMT: invalid DECIMAL value");
                     });
-            assertThat(copiedRows).singleElement().satisfies(record -> {
-                assertThat(record.get(0)).isEqualTo("U_3");
-                assertThat(record.get(1)).isEqualTo("U_1");
-                assertThat(record.get(2)).isEqualTo("12.50");
-                assertThat(record.get(3)).isEqualTo("2");
-                assertThat(record.get(4)).isEqualTo("2");
+            assertThat(copiedRows).as("валидная платёжная строка, переданная в COPY").singleElement().satisfies(record -> {
+                assertThat(record.get(0)).as("BENEFICIARY после нормализации").isEqualTo("U_3");
+                assertThat(record.get(1)).as("PAYER").isEqualTo("U_1");
+                assertThat(record.get(2)).as("PAY_AMT после trim").isEqualTo("12.50");
+                assertThat(record.get(3)).as("PAY_CNT").isEqualTo("2");
+                assertThat(record.get(4)).as("порядковый идентификатор строки COPY").isEqualTo("2");
             });
         });
     }
@@ -122,12 +122,12 @@ class CsvImportServiceTest {
                     copiedRows.stream().map(record -> record.toList()).toList());
 
             // Проверяет отказ строки и пустую передачу платёжных данных в COPY.
-            assertThat(report.files().get(2).read()).isEqualTo(1);
-            assertThat(report.files().get(2).accepted()).isZero();
-            assertThat(report.files().get(2).rejected()).isEqualTo(1);
-            assertThat(report.files().get(2).errorSamples()).singleElement()
-                    .satisfies(error -> assertThat(error.reason()).isEqualTo(reason));
-            assertThat(copiedRows).isEmpty();
+            assertThat(report.files().get(2).read()).as("прочитанные строки для сценария %s", label).isEqualTo(1);
+            assertThat(report.files().get(2).accepted()).as("принятые строки для сценария %s", label).isZero();
+            assertThat(report.files().get(2).rejected()).as("отклонённые строки для сценария %s", label).isEqualTo(1);
+            assertThat(report.files().get(2).errorSamples()).as("ошибка для сценария %s", label).singleElement()
+                    .satisfies(error -> assertThat(error.reason()).as("причина отказа %s", label).isEqualTo(reason));
+            assertThat(copiedRows).as("платёжные строки COPY для отклонённого сценария %s", label).isEmpty();
         });
     }
 
@@ -160,9 +160,11 @@ class CsvImportServiceTest {
             // Проверяет принятую строку и сохранение значения поля.
             int organizationTypeIndex = CsvImportSource.COMPANIES.getColumns().stream()
                     .map(CsvImportSource.Column::header).toList().indexOf("ORG_TYPE");
-            assertThat(report.files().getFirst().accepted()).isEqualTo(1);
-            assertThat(copiedRows).singleElement().satisfies(record ->
-                    assertThat(record.get(organizationTypeIndex)).isEqualTo("value;part"));
+            assertThat(report.files().getFirst().accepted()).as("принятая строка компании с quoted-полем")
+                    .isEqualTo(1);
+            assertThat(copiedRows).as("строка компании в COPY").singleElement().satisfies(record ->
+                    assertThat(record.get(organizationTypeIndex)).as("ORG_TYPE с сохранённым разделителем")
+                            .isEqualTo("value;part"));
         });
     }
 

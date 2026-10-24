@@ -35,7 +35,10 @@ public final class TestPlanExtension implements BeforeTestExecutionCallback, Aft
     @Override
     public void beforeTestExecution(ExtensionContext context) {
         String className = context.getRequiredTestClass().getName();
-        String suite = className.contains("HttpEvidence") ? "HTTP-диагностика"
+        String suite = className.contains("Insight") || className.contains("LlmClient") ? "Инсайты"
+                : className.contains("Event") ? "События"
+                : className.contains("ApiExceptionHandler") ? "Ошибки API"
+                : className.contains("HttpEvidence") ? "HTTP-диагностика"
                 : className.contains("Company") ? "Контекст компании"
                 : className.contains("Csv") ? "Импорт CSV"
                 : className.contains("Document") ? "Документы"

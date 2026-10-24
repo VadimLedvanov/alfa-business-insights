@@ -100,7 +100,10 @@ class SecurityConfigTest {
     /** Проверяет отказ в доступе к закрытым точкам без токена. */
     @Test
     void givenNoToken_whenRequest_thenUnauthorized() throws Exception {
-        request().when().get("/api/auth/me").then().assertThat(status().isUnauthorized());
+        request().when().get("/api/auth/me").then().assertThat(status().isUnauthorized())
+                .assertThat(jsonPath("$.code").value("UNAUTHORIZED"))
+                .assertThat(jsonPath("$.message").value("Требуется авторизация"))
+                .assertThat(jsonPath("$.retryable").value(false));
         request().when().post("/api/admin/check").then().assertThat(status().isUnauthorized());
     }
 
@@ -136,7 +139,9 @@ class SecurityConfigTest {
 
         // Действие и проверки
         request().header("Authorization", "Bearer valid").when().get("/api/auth/me").then()
-                .assertThat(status().isForbidden());
+                .assertThat(status().isForbidden())
+                .assertThat(jsonPath("$.code").value("FORBIDDEN"))
+                .assertThat(jsonPath("$.retryable").value(false));
     }
 
     /** Проверяет отказ директору при обращении к административной точке. */
@@ -147,7 +152,9 @@ class SecurityConfigTest {
 
         // Действие и проверки
         request().header("Authorization", "Bearer valid").when().get("/api/admin/check").then()
-                .assertThat(status().isForbidden());
+                .assertThat(status().isForbidden())
+                .assertThat(jsonPath("$.code").value("FORBIDDEN"))
+                .assertThat(jsonPath("$.retryable").value(false));
     }
 
     /** Проверяет доступ администратора к административной точке. */

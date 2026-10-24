@@ -15,15 +15,24 @@
     <name>Backend verification</name>
     <properties>
         <java.version>21</java.version>
+        <spring-ai.version>2.0.2</spring-ai.version>
         <allure.version>2.35.5</allure.version>
         <allure.serve.port>8767</allure.serve.port>
         <rest-assured.version>6.2.0</rest-assured.version>
         <jacoco.version>0.8.15</jacoco.version>
         <coverage.skip>false</coverage.skip>
+        <qa.forks>2</qa.forks>
         <argLine></argLine>
     </properties>
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
@@ -34,6 +43,21 @@
         </dependencies>
     </dependencyManagement>
     <dependencies>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+            <exclusions>
+                <!-- Аннотации предоставляет Springdoc в версии своего swagger-core. -->
+                <exclusion>
+                    <groupId>io.swagger.core.v3</groupId>
+                    <artifactId>swagger-annotations</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.swagger.core.v3</groupId>
+                    <artifactId>swagger-annotations-jakarta</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-openfeign</artifactId>
@@ -164,10 +188,13 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <failIfNoTests>true</failIfNoTests>
+                    <forkCount>${qa.forks}</forkCount>
+                    <reuseForks>true</reuseForks>
                     <argLine>@{argLine} -Xmx2g</argLine>
                     <systemPropertyVariables>
                         <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
                         <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
+                        <spring.ai.model.chat>none</spring.ai.model.chat>
                         <spring.cloud.openfeign.client.config.default.capabilities>alpha.business.insight.core.qa.connectors.AllureFeignCapability</spring.cloud.openfeign.client.config.default.capabilities>
                     </systemPropertyVariables>
                 </configuration>
@@ -180,6 +207,24 @@
                     <execution>
                         <id>instrument</id>
                         <goals><goal>prepare-agent</goal></goals>
+                        <configuration>
+                            <destFile>${project.build.directory}/jacoco-${surefire.forkNumber}.exec</destFile>
+                            <append>true</append>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>coverage-merge</id>
+                        <phase>test</phase>
+                        <goals><goal>merge</goal></goals>
+                        <configuration>
+                            <fileSets>
+                                <fileSet>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes><include>jacoco-*.exec</include></includes>
+                                </fileSet>
+                            </fileSets>
+                            <outputFile>${project.build.directory}/jacoco.exec</outputFile>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>coverage-report</id>
@@ -209,6 +254,23 @@
                     <servePort>${allure.serve.port}</servePort>
                     <resultsDirectory>${project.build.directory}/allure-results</resultsDirectory>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>remove-stale-jacoco-data</id>
+                        <phase>initialize</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration><target>
+                            <delete>
+                                <fileset dir="${project.build.directory}" includes="jacoco-*.exec,jacoco.exec" erroronmissingdir="false"/>
+                            </delete>
+                        </target></configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

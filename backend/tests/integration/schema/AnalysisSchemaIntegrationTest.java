@@ -7,7 +7,6 @@ import alpha.business.insight.core.model.EventSourceType;
 import alpha.business.insight.core.model.EventStatus;
 import alpha.business.insight.core.model.Feedback;
 import alpha.business.insight.core.model.Insight;
-import alpha.business.insight.core.model.InsightStep;
 import alpha.business.insight.core.model.UserCompanyAccess;
 import alpha.business.insight.core.model.UserCompanyAccessId;
 import alpha.business.insight.core.qa.helpers.TestEvidence;
@@ -83,8 +82,6 @@ class AnalysisSchemaIntegrationTest {
         Map<String, Object> payload = Map.of("summary", "Кредиты станут дешевле", "sources", java.util.List.of(fragmentId.toString()));
         Insight insight = persist(Insight.class, Map.of("company", company, "event", event,
                 "materialsVersion", 1L, "payload", payload, "costRub", new BigDecimal("1.25"), "createdAt", now));
-        InsightStep step = persist(InsightStep.class, Map.of("insight", insight, "stepNo", 0, "kind", "SEARCH",
-                "payload", Map.of("query", "ставка"), "createdAt", now));
         DialogMessage message = persist(DialogMessage.class, Map.of("insight", insight, "role", "USER",
                 "text", "Что это значит для нас?", "createdAt", now));
         Feedback feedback = persist(Feedback.class, Map.of("insight", insight, "userId", "keycloak-sub",
@@ -102,7 +99,6 @@ class AnalysisSchemaIntegrationTest {
         assertThat(loadedInsight.getPayload()).isEqualTo(payload);
         assertThat(loadedInsight.getCostRub()).isEqualByComparingTo("1.25");
         assertThat(loadedInsight.getCompany().getId()).isEqualTo(company.getId());
-        assertThat(entities.find(InsightStep.class, step.getId()).getPayload()).containsEntry("query", "ставка");
         assertThat(entities.find(DialogMessage.class, message.getId()).getText()).isEqualTo("Что это значит для нас?");
         assertThat(entities.find(Feedback.class, feedback.getId()).getValue()).isEqualTo((short) 1);
         assertThat(entities.find(UserCompanyAccess.class, accessId).getCompany().getId()).isEqualTo(company.getId());

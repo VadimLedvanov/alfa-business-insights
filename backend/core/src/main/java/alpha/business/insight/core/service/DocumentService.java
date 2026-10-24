@@ -3,6 +3,7 @@ package alpha.business.insight.core.service;
 import alpha.business.insight.core.dto.DocumentMetadata;
 import alpha.business.insight.core.ml.DocumentAnalysis;
 import alpha.business.insight.core.ml.DocumentAnalyzer;
+import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.repository.DocumentRepository;
 import alpha.business.insight.core.model.KnowledgeDocument;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -97,7 +99,7 @@ public class DocumentService {
             DocumentAnalysis analysis = analyze(documentId, pdf);
             indexingStarted = true;
             vectors.index(analysis, publicationDate, deadline);
-            var document = new KnowledgeDocument(documentId, documentTitle, name, storage.relativePath(documentId),
+            KnowledgeDocument document = new KnowledgeDocument(documentId, documentTitle, name, storage.relativePath(documentId),
                     pdf.length, sha256(pdf), Instant.now(), publicationDate, analysis.chunks().size(),
                     analysis.schemaVersion(), analysis.embeddingModel(), analysis.embeddingDimension(), analysis.stub());
             return DocumentMetadata.from(repository.saveAndFlush(document));
@@ -123,11 +125,16 @@ public class DocumentService {
     }
 
     /**
-     * Синхронно вызывает анализатор и проверяет его ответ; ошибки ML преобразует в HTTP 502.
+     * Недоступность ML даёт HTTP 503; некорректный ответ — HTTP 502.
      */
     private DocumentAnalysis analyze(UUID id, byte[] pdf) {
+        DocumentAnalysis result;
         try {
-            DocumentAnalysis result = analyzer.analyze(id, pdf);
+            result = analyzer.analyze(id, pdf);
+        } catch (RuntimeException exception) {
+            throw new ComponentUnavailableException("ML");
+        }
+        try {
             if (result == null) {
                 throw new IllegalArgumentException("ML вернул пустой ответ");
             }
@@ -164,7 +171,7 @@ public class DocumentService {
         if (file.getSize() > MAX_BYTES) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 20 МБ");
         }
-        try (var input = file.getInputStream()) {
+        try (InputStream input = file.getInputStream()) {
             byte[] pdf = input.readNBytes(MAX_BYTES + 1);
             if (pdf.length > MAX_BYTES) {
                 throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 20 МБ");

@@ -3,6 +3,7 @@ package alpha.business.insight.core.ml;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -48,7 +49,7 @@ public record DocumentAnalysis(
                 || chunks == null || chunks.isEmpty()) {
             throw new IllegalArgumentException("Некорректный контракт ответа ML");
         }
-        var ordinals = new HashSet<Integer>();
+        Set<Integer> ordinals = new HashSet<>();
         for (DocumentChunk chunk : chunks) {
             if (chunk == null || chunk.ordinal() < 0 || !ordinals.add(chunk.ordinal()) || chunk.page() < 1
                     || chunk.text() == null || chunk.text().isBlank() || chunk.embedding() == null

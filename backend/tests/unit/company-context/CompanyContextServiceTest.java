@@ -71,12 +71,17 @@ class CompanyContextServiceTest {
             TestEvidence.output("Контекст компании", result);
 
             // Проверяет состав выдачи, доли и концентрацию платежей.
-            assertThat(result.counterparties()).extracting(c -> c.companyId()).containsExactly("U_2", "U_3");
-            assertThat(result.totalPaymentAmount()).isEqualByComparingTo("100");
-            assertThat(result.counterparties()).extracting(c -> c.paymentShare())
+            assertThat(result.counterparties()).as("контрагенты в пределах лимита %s", limit)
+                    .extracting(c -> c.companyId()).containsExactly("U_2", "U_3");
+            assertThat(result.totalPaymentAmount()).as("полный оборот контрагентов")
+                    .isEqualByComparingTo("100");
+            assertThat(result.counterparties()).as("доли платежей в том же порядке")
+                    .extracting(c -> c.paymentShare())
                     .containsExactly(new BigDecimal("0.60000000"), new BigDecimal("0.30000000"));
-            assertThat(result.concentration().top1Share()).isEqualByComparingTo("0.60000000");
-            assertThat(result.concentration().top3Share()).isEqualByComparingTo("1.00000000");
+            assertThat(result.concentration().top1Share()).as("доля крупнейшего контрагента")
+                    .isEqualByComparingTo("0.60000000");
+            assertThat(result.concentration().top3Share()).as("доля трёх крупнейших контрагентов")
+                    .isEqualByComparingTo("1.00000000");
             verify(payments).findCounterparties(companyId, 3);
         });
     }
@@ -107,12 +112,13 @@ class CompanyContextServiceTest {
             TestEvidence.output("Контекст компании", result);
 
             // Проверяет маркеры отсутствующих данных и пустые значения.
-            assertThat(result.group()).isEmpty();
-            assertThat(result.counterparties()).isEmpty();
-            assertThat(result.totalPaymentAmount()).isZero();
-            assertThat(result.concentration().top1Share()).isNull();
-            assertThat(result.concentration().top3Share()).isNull();
-            assertThat(result.missingData()).contains("profile.missing", "payments", "paymentShares");
+            assertThat(result.group()).as("группа для пустого groupId").isEmpty();
+            assertThat(result.counterparties()).as("список контрагентов без платежей").isEmpty();
+            assertThat(result.totalPaymentAmount()).as("оборот без платежей").isZero();
+            assertThat(result.concentration().top1Share()).as("доля топ-1 при нулевом обороте").isNull();
+            assertThat(result.concentration().top3Share()).as("доля топ-3 при нулевом обороте").isNull();
+            assertThat(result.missingData()).as("признаки отсутствующих профиля и платежей")
+                    .contains("profile.missing", "payments", "paymentShares");
         });
     }
 

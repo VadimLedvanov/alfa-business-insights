@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import alpha.business.insight.core.qa.connectors.BackendClient;
 import alpha.business.insight.core.qa.connectors.KeycloakClient;
 import io.qameta.allure.Allure;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.TestWatcher;
@@ -23,6 +22,7 @@ import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.utility.MountableFile;
 
 import java.net.URI;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.io.IOException;
@@ -33,9 +33,8 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 /** Базовый класс HTTP-тестов приложения с реальными инфраструктурными сервисами. */
-@Tag("e2e")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"ml.stub=true", "spring.jpa.hibernate.ddl-auto=validate"})
+        properties = {"ml.stub=true", "spring.ai.model.chat=none", "spring.jpa.hibernate.ddl-auto=validate"})
 public abstract class RealStackE2eTest {
     private static final String REALM = "alfa-business-insights";
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -125,7 +124,12 @@ public abstract class RealStackE2eTest {
         String id = documentId.toString();
         Path directory = root.resolve(id.substring(0, 2)).resolve(id.substring(2, 4)).resolve(id.substring(4, 6));
         while (directory != null && directory.startsWith(root)) {
-            Files.deleteIfExists(directory);
+            try {
+                Files.deleteIfExists(directory);
+            } catch (DirectoryNotEmptyException sharedStorageStillInUse) {
+                // Another test may have files below this shared parent; leave it and its contents intact.
+                break;
+            }
             directory = directory.getParent();
         }
     }

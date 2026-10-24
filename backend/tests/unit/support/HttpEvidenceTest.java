@@ -121,6 +121,11 @@ class HttpEvidenceTest {
                             .containsEntry("title", "title=quarterly report.pdf, draft copy")
                             .containsEntry("description", "description=upload, password=[REDACTED]");
                     assertNoSecrets(redacted.toString(), "quoted-secret-1", "line-secret-2", "embedded-secret-3");
+
+                    String summary = String.join("\n", HttpEvidence.formField("PASSWORD", passwordValues),
+                            HttpEvidence.formField("description", descriptionValues));
+                    assertThat(summary).contains("PASSWORD=[REDACTED]", "description=upload, password=[REDACTED]");
+                    assertNoSecrets(summary, "quoted-secret-1", "line-secret-2", "embedded-secret-3");
                 });
     }
 

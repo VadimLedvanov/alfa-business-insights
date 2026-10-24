@@ -89,6 +89,11 @@ class CompanyContextIntegrationTest {
                     ('ctx_empty', 'MISSING', NULL, NULL), ('ctx_conflict', 'CONFLICTING', NULL, NULL)
                 """);
         execute("""
+                INSERT INTO user_company_access (user_id, company_id)
+                VALUES ('context-director', 'ctx_main'), ('context-director', 'ctx_empty'),
+                    ('context-director', 'ctx_conflict')
+                """);
+        execute("""
                 INSERT INTO company_payment_summaries
                     (payer_company_id, recipient_company_id, total_payment_amount, payment_count)
                 VALUES ('ctx_a', 'ctx_main', 250, 1), ('ctx_main', 'ctx_a', 150, 1),
@@ -104,7 +109,7 @@ class CompanyContextIntegrationTest {
     void givenGroupAndBidirectionalPayments_whenGetContext_thenReturnProfileRankingsAndMissingData(String role)
             throws Exception {
         // Действие
-        request().postProcessors(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role)))
+        request().postProcessors(director("ROLE_" + role))
                 .when().get("/api/companies/ctx_main").then()
                 .assertThat(status().isOk())
                 .assertThat(jsonPath("$.profile.companyId").value("ctx_main"))
@@ -140,8 +145,7 @@ class CompanyContextIntegrationTest {
     @Test
     void givenNoGroupOrPayments_whenGetContext_thenReturnEmptyListsAndUnknownShares() throws Exception {
         // Действие
-        request().postProcessors(jwt().authorities(
-                        new SimpleGrantedAuthority("ROLE_COMPANY_DIRECTOR")))
+        request().postProcessors(director("ROLE_COMPANY_DIRECTOR"))
                 .when().get("/api/companies/ctx_empty").then()
                 .assertThat(status().isOk())
                 .assertThat(jsonPath("$.group").isEmpty())
@@ -281,6 +285,12 @@ class CompanyContextIntegrationTest {
     /** Создаёт request-local спецификацию для существующего Spring MockMvc. */
     private io.restassured.module.mockmvc.specification.MockMvcRequestSpecification request() {
         return MockMvcRestAssured.request(mvc);
+    }
+
+    /** Создаёт JWT директора с subject, совпадающим с подготовленными грантами. */
+    private org.springframework.test.web.servlet.request.RequestPostProcessor director(String role) {
+        return jwt().jwt(token -> token.subject("context-director"))
+                .authorities(new SimpleGrantedAuthority(role));
     }
 
     /** Выполняет SQL-команду подготовки данных через EntityManager. */

@@ -1,12 +1,19 @@
 package alpha.business.insight.core.service;
 
 import alpha.business.insight.core.ml.DocumentAnalysis;
+import alpha.business.insight.core.ml.ComponentUnavailableException;
+import alpha.business.insight.core.dto.InsightFragment;
+import io.qdrant.client.grpc.Points.SearchPoints;
+import io.qdrant.client.grpc.Points.WithPayloadSelector;
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.grpc.Collections.Distance;
 import io.qdrant.client.grpc.Collections.VectorParams;
 import io.qdrant.client.grpc.Common.Filter;
 import io.qdrant.client.grpc.Points.PointStruct;
 import io.qdrant.client.grpc.Points.UpdateStatus;
+import io.qdrant.client.grpc.Points.UpdateResult;
+import io.qdrant.client.grpc.Points.ScoredPoint;
+import io.qdrant.client.grpc.JsonWithInt.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -15,6 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -60,9 +69,10 @@ public class DocumentVectorStore {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Для этой версии настроена только изолированная коллекция stub-v1");
         }
+        deadline = Math.min(deadline, System.nanoTime() + Duration.ofSeconds(5).toNanos());
         ensureCollection(deadline);
-        var points = analysis.chunks().stream().map(chunk -> {
-            var point = PointStruct.newBuilder()
+        List<PointStruct> points = analysis.chunks().stream().map(chunk -> {
+            PointStruct.Builder point = PointStruct.newBuilder()
                     .setId(id(chunkId(analysis.documentId(), chunk.ordinal())))
                     .setVectors(vectors(chunk.embedding()))
                     .putPayload("documentId", value(analysis.documentId().toString()))
@@ -78,9 +88,9 @@ public class DocumentVectorStore {
             }
             return point.build();
         }).toList();
-        var result = await(client.upsertAsync(STUB_COLLECTION, points, remaining(deadline)), deadline);
+        UpdateResult result = await(client.upsertAsync(STUB_COLLECTION, points, remaining(deadline)), deadline);
         if (result.getStatus() != UpdateStatus.Completed) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Qdrant не подтвердил индексацию");
+            throw new ComponentUnavailableException("Qdrant");
         }
     }
 
@@ -93,6 +103,32 @@ public class DocumentVectorStore {
      */
     public static UUID chunkId(UUID documentId, int ordinal) {
         return UUID.nameUUIDFromBytes((documentId + ":" + ordinal).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Ищет до пяти фрагментов stub-v1; отсутствующая коллекция означает пустую базу знаний. */
+    public List<InsightFragment> search(List<Float> embedding) {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        if (!await(client.collectionExistsAsync(STUB_COLLECTION, remaining(deadline)), deadline)) {
+            return List.of();
+        }
+        Filter filter = Filter.newBuilder()
+                .addMust(matchKeyword("accessScope", "APPLICATION"))
+                .addMust(matchKeyword("embeddingModel", "stub-v1")).build();
+        List<ScoredPoint> points = await(client.searchAsync(SearchPoints.newBuilder().setCollectionName(STUB_COLLECTION)
+                .addAllVector(embedding).setLimit(5).setFilter(filter)
+                .setWithPayload(WithPayloadSelector.newBuilder().setEnable(true)).build(), remaining(deadline)), deadline);
+        return points.stream().map(point -> {
+            Map<String, Value> payload = point.getPayloadMap();
+            try {
+                return new InsightFragment(UUID.fromString(point.getId().getUuid()),
+                        UUID.fromString(payload.get("documentId").getStringValue()),
+                        Math.toIntExact(payload.get("page").getIntegerValue()), payload.get("text").getStringValue(),
+                        payload.get("materialType").getStringValue(),
+                        !payload.containsKey("stub") || payload.get("stub").getBoolValue());
+            } catch (RuntimeException exception) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Некорректный фрагмент в Qdrant", exception);
+            }
+        }).toList();
     }
 
     /**
@@ -111,10 +147,10 @@ public class DocumentVectorStore {
                 }
             }
         }
-        var params = await(client.getCollectionInfoAsync(STUB_COLLECTION, remaining(deadline)), deadline)
+        VectorParams params = await(client.getCollectionInfoAsync(STUB_COLLECTION, remaining(deadline)), deadline)
                 .getConfig().getParams().getVectorsConfig().getParams();
         if (params.getSize() != 8 || params.getDistance() != Distance.Cosine) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Несовместимая конфигурация коллекции Qdrant");
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Несовместимая конфигурация коллекции Qdrant");
         }
     }
 
@@ -125,14 +161,14 @@ public class DocumentVectorStore {
      * @throws ResponseStatusException если Qdrant не подтвердил очистку
      */
     public void delete(UUID documentId) {
-        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
         if (!await(client.collectionExistsAsync(STUB_COLLECTION, remaining(deadline)), deadline)) {
             return;
         }
         Filter filter = Filter.newBuilder().addMust(matchKeyword("documentId", documentId.toString())).build();
-        var result = await(client.deleteAsync(STUB_COLLECTION, filter, remaining(deadline)), deadline);
+        UpdateResult result = await(client.deleteAsync(STUB_COLLECTION, filter, remaining(deadline)), deadline);
         if (result.getStatus() != UpdateStatus.Completed) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Qdrant не подтвердил очистку");
+            throw new ComponentUnavailableException("Qdrant");
         }
     }
 
@@ -142,7 +178,7 @@ public class DocumentVectorStore {
     private static Duration remaining(long deadline) {
         long nanos = deadline - System.nanoTime();
         if (nanos <= 0) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Истекло время обращения к Qdrant");
+            throw new ComponentUnavailableException("Qdrant");
         }
         return Duration.ofNanos(nanos);
     }
@@ -156,10 +192,10 @@ public class DocumentVectorStore {
         } catch (InterruptedException exception) {
             future.cancel(true);
             Thread.currentThread().interrupt();
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Обращение к Qdrant прервано", exception);
+            throw new ComponentUnavailableException("Qdrant");
         } catch (ExecutionException | TimeoutException exception) {
             future.cancel(true);
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Qdrant недоступен", exception);
+            throw new ComponentUnavailableException("Qdrant");
         } finally {
             if (!future.isDone()) {
                 future.cancel(true);

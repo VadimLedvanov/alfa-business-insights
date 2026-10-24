@@ -91,13 +91,14 @@ class DocumentServiceTest {
                 actual -> {
                     String actualSha256 = sha256(PDF);
                     byte[] storedPdf = storage.read(actual.documentId()).getContentAsByteArray();
-                    assertThat(actual.title()).isEqualTo("Обзор ставки");
-                    assertThat(actual.fileName()).isEqualTo("rates.pdf");
-                    assertThat(actual.sizeBytes()).isEqualTo(PDF.length);
-                    assertThat(actual.sha256()).isEqualTo(actualSha256);
-                    assertThat(actual.publicationDate()).isEqualTo(publicationDate);
-                    assertThat(actual.chunkCount()).isEqualTo(1);
-                    assertThat(storedPdf).isEqualTo(PDF);
+                    assertThat(actual.title()).as("нормализованный заголовок").isEqualTo("Обзор ставки");
+                    assertThat(actual.fileName()).as("имя после удаления каталогов из пути загрузки")
+                            .isEqualTo("rates.pdf");
+                    assertThat(actual.sizeBytes()).as("размер сохранённого PDF").isEqualTo(PDF.length);
+                    assertThat(actual.sha256()).as("SHA-256 исходных байтов").isEqualTo(actualSha256);
+                    assertThat(actual.publicationDate()).as("дата публикации").isEqualTo(publicationDate);
+                    assertThat(actual.chunkCount()).as("число чанков анализа").isEqualTo(1);
+                    assertThat(storedPdf).as("байты PDF в хранилище").isEqualTo(PDF);
                     TestEvidence.output("Сохранённый оригинал", fileDetails(actual.fileName(), storedPdf));
                     verify(vectors).index(any(DocumentAnalysis.class), eq(publicationDate), anyLong());
                 });
@@ -116,9 +117,10 @@ class DocumentServiceTest {
                         "filename", "", "content", PDF))),
                 () -> service.upload(fileWithoutName, " ", null),
                 actual -> {
-                    assertThat(actual.fileName()).isEqualTo("document.pdf");
-                    assertThat(actual.title()).isEqualTo("document.pdf");
-                    assertThat(storage.read(actual.documentId()).getContentAsByteArray()).isEqualTo(PDF);
+                    assertThat(actual.fileName()).as("имя документа по умолчанию").isEqualTo("document.pdf");
+                    assertThat(actual.title()).as("заголовок по умолчанию").isEqualTo("document.pdf");
+                    assertThat(storage.read(actual.documentId()).getContentAsByteArray())
+                            .as("байты PDF без переданного имени").isEqualTo(PDF);
                     TestEvidence.output("Сохранённый оригинал", fileDetails(actual.fileName(), PDF));
                 });
     }
@@ -135,7 +137,7 @@ class DocumentServiceTest {
                     assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
                             actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
                     TestEvidence.output("Файлы в хранилище", regularFiles());
-                    assertThat(regularFiles()).isEmpty();
+                    assertThat(regularFiles()).as("файлы после отказа до записи").isEmpty();
                     verify(analyzer, never()).analyze(any(), any());
                     verify(repository, never()).saveAndFlush(any());
                 });
@@ -158,7 +160,7 @@ class DocumentServiceTest {
                     assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
                             actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
                     TestEvidence.output("Файлы после компенсации", regularFiles());
-                    assertThat(regularFiles()).isEmpty();
+                    assertThat(regularFiles()).as("файлы после компенсации сбоя анализатора").isEmpty();
                     verify(vectors, never()).delete(any());
                     verify(repository, never()).saveAndFlush(any());
                 });
@@ -179,7 +181,7 @@ class DocumentServiceTest {
                     assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
                             actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
                     TestEvidence.output("Файлы после компенсации", regularFiles());
-                    assertThat(regularFiles()).isEmpty();
+                    assertThat(regularFiles()).as("файлы после компенсации чужого documentId").isEmpty();
                     verify(vectors, never()).index(any(), any(), anyLong());
                     verify(repository, never()).saveAndFlush(any());
                 });
@@ -198,7 +200,7 @@ class DocumentServiceTest {
                 () -> service.upload(file("rates.pdf"), null, null), error -> {
                     assertThat(error).isInstanceOf(ResponseStatusException.class);
                     TestEvidence.output("Файлы после компенсации", regularFiles());
-                    assertThat(regularFiles()).isEmpty();
+                    assertThat(regularFiles()).as("файлы после компенсации ошибки индексации").isEmpty();
                     verify(vectors).delete(any());
                     verify(repository, never()).saveAndFlush(any());
                 });
@@ -238,7 +240,7 @@ class DocumentServiceTest {
                     assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
                             actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
                     TestEvidence.output("Файлы после отказа", regularFiles());
-                    assertThat(root).isEmptyDirectory();
+                    assertThat(root).as("каталог загрузки после ошибки чтения").isEmptyDirectory();
                 });
     }
 
