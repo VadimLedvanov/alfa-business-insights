@@ -56,6 +56,22 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  ml:
+    container_name: alfa-ml
+    build:
+      context: ../ml
+    env_file:
+      - ../.env.example
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
   backend:
     container_name: alfa-backend
     build:
@@ -64,6 +80,8 @@ services:
       - ../.env.example
     environment:
       QDRANT_HOST: qdrant
+      ML_URL: http://ml:8000
+      ML_STUB: "false"
       DOCUMENTS_STORAGE_PATH: /app/data/documents
     volumes:
       - documents_data:/app/data/documents
@@ -76,6 +94,31 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      ml:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    container_name: alfa-frontend
+    build:
+      context: ../frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
     restart: unless-stopped
 
 volumes:
