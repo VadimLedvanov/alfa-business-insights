@@ -3,6 +3,25 @@ server:
     context-path: /api
 
 spring:
+  ai:
+    model:
+      chat: openai
+      embedding: none
+      image: none
+      audio:
+        speech: none
+        transcription: none
+      moderation: none
+    openai:
+      base-url: https://changellenge.up.railway.app/v1
+      api-key: ${OPENAI_API_KEY:}
+      timeout: 30s
+      max-retries: 0
+      chat:
+        model: z-ai/glm-5.3-flash
+        max-tokens: 3000
+        response-format:
+          type: JSON_OBJECT
   servlet:
     multipart:
       max-file-size: 20MB

@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -97,7 +98,7 @@ public class DocumentService {
             DocumentAnalysis analysis = analyze(documentId, pdf);
             indexingStarted = true;
             vectors.index(analysis, publicationDate, deadline);
-            var document = new KnowledgeDocument(documentId, documentTitle, name, storage.relativePath(documentId),
+            KnowledgeDocument document = new KnowledgeDocument(documentId, documentTitle, name, storage.relativePath(documentId),
                     pdf.length, sha256(pdf), Instant.now(), publicationDate, analysis.chunks().size(),
                     analysis.schemaVersion(), analysis.embeddingModel(), analysis.embeddingDimension(), analysis.stub());
             return DocumentMetadata.from(repository.saveAndFlush(document));
@@ -164,7 +165,7 @@ public class DocumentService {
         if (file.getSize() > MAX_BYTES) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 20 МБ");
         }
-        try (var input = file.getInputStream()) {
+        try (InputStream input = file.getInputStream()) {
             byte[] pdf = input.readNBytes(MAX_BYTES + 1);
             if (pdf.length > MAX_BYTES) {
                 throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 20 МБ");
