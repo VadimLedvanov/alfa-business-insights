@@ -69,7 +69,7 @@ public class DocumentController {
     @ApiResponse(responseCode = "413", description = "Файл превышает 20 МБ")
     @ApiResponse(responseCode = "415", description = "Файл не имеет сигнатуры PDF")
     @ApiResponse(responseCode = "502", description = "Некорректный ответ ML")
-    @ApiResponse(responseCode = "503", description = "Qdrant недоступен или превышено время обработки")
+    @ApiResponse(responseCode = "503", description = "ML или Qdrant недоступен; запрос можно повторить")
     public ResponseEntity<DocumentMetadata> upload(
             @Parameter(description = "Оригинальный PDF размером до 20 МБ", required = true) @RequestPart("file") MultipartFile file,
             @Parameter(description = "Название материала; по умолчанию имя файла")

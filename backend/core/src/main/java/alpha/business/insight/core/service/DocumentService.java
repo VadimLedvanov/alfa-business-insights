@@ -3,6 +3,7 @@ package alpha.business.insight.core.service;
 import alpha.business.insight.core.dto.DocumentMetadata;
 import alpha.business.insight.core.ml.DocumentAnalysis;
 import alpha.business.insight.core.ml.DocumentAnalyzer;
+import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.repository.DocumentRepository;
 import alpha.business.insight.core.model.KnowledgeDocument;
 import org.slf4j.Logger;
@@ -124,11 +125,16 @@ public class DocumentService {
     }
 
     /**
-     * Синхронно вызывает анализатор и проверяет его ответ; ошибки ML преобразует в HTTP 502.
+     * Недоступность ML даёт HTTP 503; некорректный ответ — HTTP 502.
      */
     private DocumentAnalysis analyze(UUID id, byte[] pdf) {
+        DocumentAnalysis result;
         try {
-            DocumentAnalysis result = analyzer.analyze(id, pdf);
+            result = analyzer.analyze(id, pdf);
+        } catch (RuntimeException exception) {
+            throw new ComponentUnavailableException("ML");
+        }
+        try {
             if (result == null) {
                 throw new IllegalArgumentException("ML вернул пустой ответ");
             }

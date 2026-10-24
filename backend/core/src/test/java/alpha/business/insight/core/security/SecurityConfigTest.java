@@ -93,7 +93,10 @@ class SecurityConfigTest {
 
     @Test
     void givenNoToken_whenRequest_thenUnauthorized() throws Exception {
-        mvc.perform(apiGet("/auth/me")).andExpect(status().isUnauthorized());
+        mvc.perform(apiGet("/auth/me")).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").value("Требуется авторизация"))
+                .andExpect(jsonPath("$.retryable").value(false));
         mvc.perform(apiPost("/admin/check")).andExpect(status().isUnauthorized());
     }
 
@@ -120,14 +123,18 @@ class SecurityConfigTest {
     void givenNoApplicationRole_whenGetMe_thenForbidden(String role) throws Exception {
         token(role);
         mvc.perform(apiGet("/auth/me").header("Authorization", "Bearer valid"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.retryable").value(false));
     }
 
     @Test
     void givenDirector_whenAdminRequest_thenForbidden() throws Exception {
         token("COMPANY_DIRECTOR");
         mvc.perform(apiGet("/admin/check").header("Authorization", "Bearer valid"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.retryable").value(false));
     }
 
     @Test

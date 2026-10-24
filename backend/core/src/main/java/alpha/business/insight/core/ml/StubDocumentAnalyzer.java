@@ -12,6 +12,11 @@ import java.util.UUID;
 @Component
 @ConditionalOnProperty(name = "ml.stub", havingValue = "true", matchIfMissing = true)
 public class StubDocumentAnalyzer implements DocumentAnalyzer {
+    @Override
+    public Embedding embedding(java.util.Map<String, String> request) {
+        return new Embedding("stub-v1", 8, true, embed(request.get("text")));
+    }
+
     /** Возвращает тот же синтетический вектор stub-v1, что используется при индексации. */
     @Override
     public List<Float> embed(String query) {

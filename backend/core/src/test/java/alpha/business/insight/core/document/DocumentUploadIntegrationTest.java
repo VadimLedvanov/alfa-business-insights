@@ -225,7 +225,7 @@ class DocumentUploadIntegrationTest {
         });
         mvc.perform(multipart("/api/admin/documents").contextPath("/api").file(pdf())
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_SYSTEM_ADMIN"))))
-                .andExpect(status().isBadGateway());
+                .andExpect(status().is(fault.equals("exception") ? 503 : 502));
         assertThat(documentCount()).isZero();
         assertNoFiles();
     }

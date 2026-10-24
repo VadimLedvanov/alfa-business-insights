@@ -1,6 +1,7 @@
 package alpha.business.insight.core.insight;
 
 import alpha.business.insight.core.ml.LlmClient;
+import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.ml.DocumentAnalysis;
 import alpha.business.insight.core.ml.StubDocumentAnalyzer;
 import alpha.business.insight.core.model.KnowledgeDocument;
@@ -81,6 +82,7 @@ class InsightApiIntegrationTest {
     @MockitoBean JwtDecoder decoder;
     @MockitoSpyBean LlmClient llm;
     @Autowired DocumentVectorStore vectors;
+    @MockitoSpyBean StubDocumentAnalyzer analyzer;
     @Autowired DocumentRepository documents;
     String company;
     UUID event;
@@ -205,12 +207,43 @@ class InsightApiIntegrationTest {
             completion.withArray("issues").addObject().put("source_fragment", "Ставка снижена");
             return completion;
         }).when(llm).complete(eq("critic"), any());
-        doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_GATEWAY,
-                "LLM недоступна")).when(llm).complete(eq("revision"), any());
+        doThrow(new ComponentUnavailableException("LLM")).when(llm).complete(eq("revision"), any());
         mvc.perform(post(path()).contextPath("/api").with(director()))
-                .andExpect(status().isBadGateway());
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("LLM_UNAVAILABLE"))
+                .andExpect(jsonPath("$.retryable").value(true));
         mvc.perform(get(path()).contextPath("/api").with(director())).andExpect(status().isNotFound());
         doCallRealMethod().when(llm).complete(eq("revision"), any());
+        generate();
+    }
+
+    @Test
+    void failedMlDoesNotSaveInsightAndCanBeRetried() throws Exception {
+        doThrow(new IllegalStateException("private ML details")).when(analyzer).embed(anyString());
+        mvc.perform(post(path()).contextPath("/api").with(director()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("ML_UNAVAILABLE"))
+                .andExpect(jsonPath("$.retryable").value(true));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM insights WHERE company_id=?", Long.class, company)).isZero();
+        doCallRealMethod().when(analyzer).embed(anyString());
+        generate();
+    }
+
+    @Test
+    void failedQdrantDoesNotSaveInsightAndCanBeRetried() throws Exception {
+        var docker = org.testcontainers.DockerClientFactory.instance().client();
+        docker.pauseContainerCmd(QDRANT.getContainerId()).exec();
+        long started = System.nanoTime();
+        try {
+            mvc.perform(post(path()).contextPath("/api").with(director()))
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("QDRANT_UNAVAILABLE"))
+                    .andExpect(jsonPath("$.retryable").value(true));
+            assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(8));
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM insights WHERE company_id=?", Long.class, company)).isZero();
+        } finally {
+            docker.unpauseContainerCmd(QDRANT.getContainerId()).exec();
+        }
         generate();
     }
 
