@@ -38,3 +38,5 @@ build/
 
 # Uploaded PDF originals
 /backend/core/data/documents/
+
+.codegraph/
