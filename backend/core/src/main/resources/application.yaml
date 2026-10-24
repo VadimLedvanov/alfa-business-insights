@@ -14,7 +14,7 @@ spring:
       moderation: none
     openai:
       base-url: https://changellenge.up.railway.app/v1
-      api-key: ${OPENAI_API_KEY:}
+      api-key: ${OPENAI_API_KEY}
       timeout: 90s
       max-retries: 0
       chat:
@@ -73,5 +73,5 @@ documents:
   storage-path: ${DOCUMENTS_STORAGE_PATH:./data/documents}
 
 ml:
-  stub: ${ML_STUB:true}
-  url: ${ML_URL:http://localhost:8000}
+  stub: ${ML_STUB}
+  url: ${ML_URL}
