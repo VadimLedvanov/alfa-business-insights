@@ -1,5 +1,8 @@
 package alpha.business.insight.core.migration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import alpha.business.insight.core.model.Company;
 import alpha.business.insight.core.model.DialogMessage;
 import alpha.business.insight.core.model.Event;
@@ -11,10 +14,16 @@ import alpha.business.insight.core.model.UserCompanyAccess;
 import alpha.business.insight.core.model.UserCompanyAccessId;
 import alpha.business.insight.core.qa.helpers.TestEvidence;
 import jakarta.persistence.EntityManager;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,27 +36,20 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.util.Map;
-import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 /** Проверяет сохранение схемы анализа документов и её ограничений в PostgreSQL. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
-        "spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost/test-realm",
-        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://localhost/test-realm/certs"
-})
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.NONE,
+        properties = {
+            "spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost/test-realm",
+            "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://localhost/test-realm/certs"
+        })
 @Testcontainers
 @Transactional
 @DisplayName("Схема хранения материалов и персонального анализа")
 @Tag("integration")
 @Tag("schema")
 class AnalysisSchemaIntegrationTest {
-    @Container
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
+    @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18");
 
     /** Подключает Spring-контекст к базе данных в контейнере. */
     @DynamicPropertySource
@@ -57,10 +59,8 @@ class AnalysisSchemaIntegrationTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
 
-    @Autowired
-    EntityManager entities;
-    @Autowired
-    JdbcTemplate jdbc;
+    @Autowired EntityManager entities;
+    @Autowired JdbcTemplate jdbc;
 
     /** Создаёт компанию, на которую ссылаются графы анализа в тестах. */
     @BeforeEach
@@ -70,54 +70,143 @@ class AnalysisSchemaIntegrationTest {
 
     /** Проверяет сохранение и повторную загрузку связанного графа анализа. */
     @Test
-    @DisplayName("Сохранение событий, разборов, JSONB и составного ключа")
+    @DisplayName("Связи событий, инсайтов, диалога, оценок и доступа")
     void givenAnalysisGraph_whenPersistAndReload_thenPreserveDataAndRelations() throws Exception {
-        // Подготавливает сущности и связи графа анализа.
+        // Подготовка связанных сущностей и JSON-контракта инсайта.
         Instant now = Instant.parse("2026-10-23T10:00:00Z");
         Company company = entities.getReference(Company.class, "schema_company");
-        Event event = persist(Event.class, Map.of("title", "Снижение ставки", "sourceType", EventSourceType.PDF,
-                "sourceRef", "reports/rates.pdf", "status", EventStatus.READY, "createdAt", now,
-                "materialsVersion", 1L));
+        Event event =
+                persist(
+                        Event.class,
+                        Map.of(
+                                "title",
+                                "Снижение ставки",
+                                "sourceType",
+                                EventSourceType.PDF,
+                                "sourceRef",
+                                "reports/rates.pdf",
+                                "status",
+                                EventStatus.READY,
+                                "createdAt",
+                                now,
+                                "materialsVersion",
+                                1L));
         UUID fragmentId = UUID.randomUUID();
-        Map<String, Object> payload = Map.of("summary", "Кредиты станут дешевле", "sources", java.util.List.of(fragmentId.toString()));
-        Insight insight = persist(Insight.class, Map.of("company", company, "event", event,
-                "materialsVersion", 1L, "payload", payload, "costRub", new BigDecimal("1.25"), "createdAt", now));
-        DialogMessage message = persist(DialogMessage.class, Map.of("insight", insight, "role", "USER",
-                "text", "Что это значит для нас?", "createdAt", now));
-        Feedback feedback = persist(Feedback.class, Map.of("insight", insight, "userId", "keycloak-sub",
-                "value", (short) 1, "createdAt", now));
+        UUID documentId = UUID.randomUUID();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put(
+                "facts",
+                List.of(Map.of("text", "Ставка снижена", "fragment_id", fragmentId.toString())));
+        payload.put("bank_view", List.of());
+        payload.put(
+                "ai_inference",
+                List.of(
+                        Map.of(
+                                "text",
+                                "Стоимость фондирования может снизиться",
+                                "based_on",
+                                List.of(fragmentId.toString()),
+                                "confidence",
+                                "medium")));
+        payload.put("hypotheses", List.of(Map.of("text", "Спрос на кредитование может вырасти")));
+        payload.put("features_used", List.of("mainIndustryCode", "hasLoan"));
+        payload.put("risks", List.of(Map.of("text", "Маржа может измениться")));
+        payload.put(
+                "opportunities",
+                List.of(Map.of("text", "Можно пересмотреть условия финансирования")));
+        payload.put("actions", List.of(Map.of("text", "Оценить чувствительность к ставке")));
+        payload.put("missing_data", List.of("Нет данных о текущей долговой нагрузке"));
+        payload.put(
+                "sources",
+                List.of(
+                        Map.of(
+                                "fragment_id",
+                                fragmentId.toString(),
+                                "document_id",
+                                documentId.toString(),
+                                "page",
+                                1,
+                                "url",
+                                "/api/documents/" + documentId + "/file#page=1")));
+        payload.put("trace_id", UUID.randomUUID().toString());
+        payload.put("cost_rub", 1.25);
+        Insight insight =
+                persist(
+                        Insight.class,
+                        Map.of(
+                                "company",
+                                company,
+                                "event",
+                                event,
+                                "materialsVersion",
+                                1L,
+                                "payload",
+                                payload,
+                                "costRub",
+                                new BigDecimal("1.25"),
+                                "createdAt",
+                                now));
+        DialogMessage message =
+                persist(
+                        DialogMessage.class,
+                        Map.of(
+                                "insight",
+                                insight,
+                                "role",
+                                "USER",
+                                "text",
+                                "Что это значит для нас?",
+                                "createdAt",
+                                now));
+        Feedback feedback =
+                persist(
+                        Feedback.class,
+                        Map.of(
+                                "insight",
+                                insight,
+                                "userId",
+                                "keycloak-sub",
+                                "value",
+                                (short) 1,
+                                "createdAt",
+                                now));
         UserCompanyAccessId accessId = new UserCompanyAccessId("keycloak-sub", company.getId());
         persist(UserCompanyAccess.class, Map.of("id", accessId, "company", company));
-        // Сохраняет и повторно загружает полный граф анализа.
+        // Действие: сохраняет граф и заново читает его из PostgreSQL.
         entities.flush();
         entities.clear();
 
-        // Проверяет загруженные значения и связи.
-        assertThat(entities.find(Event.class, event.getId()).getSourceType()).isEqualTo(EventSourceType.PDF);
+        // Проверки восстановленных значений и связей.
+        assertThat(entities.find(Event.class, event.getId()).getSourceType())
+                .isEqualTo(EventSourceType.PDF);
         assertThat(entities.find(Event.class, event.getId()).getCreatedAt()).isEqualTo(now);
         Insight loadedInsight = entities.find(Insight.class, insight.getId());
         assertThat(loadedInsight.getPayload()).isEqualTo(payload);
         assertThat(loadedInsight.getCostRub()).isEqualByComparingTo("1.25");
         assertThat(loadedInsight.getCompany().getId()).isEqualTo(company.getId());
-        assertThat(entities.find(DialogMessage.class, message.getId()).getText()).isEqualTo("Что это значит для нас?");
+        assertThat(entities.find(DialogMessage.class, message.getId()).getText())
+                .isEqualTo("Что это значит для нас?");
         assertThat(entities.find(Feedback.class, feedback.getId()).getValue()).isEqualTo((short) 1);
-        assertThat(entities.find(UserCompanyAccess.class, accessId).getCompany().getId()).isEqualTo(company.getId());
+        assertThat(entities.find(UserCompanyAccess.class, accessId).getCompany().getId())
+                .isEqualTo(company.getId());
     }
 
     /** Проверяет уникальность ключа кэша при вставке версий анализа. */
     @Test
     @DisplayName("Новая версия материалов допускает новый инсайт, повтор той же версии запрещён")
     void givenCachedInsight_whenInsertVersion_thenEnforceCacheKey() {
-        // Создаёт версии инсайта до попытки повторной вставки.
+        // Подготовка двух допустимых версий одного события.
         UUID event = insertEvent();
         insertInsight(event, 1);
         insertInsight(event, 2);
-        Long cachedInsightCount = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM insights WHERE event_id = ?", Long.class, event);
-        TestEvidence.output("Фактическое число сохранённых версий до повторной вставки", Map.of(
-                "eventId", event, "insightCount", cachedInsightCount));
+        Long cachedInsightCount =
+                jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM insights WHERE event_id = ?", Long.class, event);
+        TestEvidence.output(
+                "Фактическое число сохранённых версий до повторной вставки",
+                Map.of("eventId", event, "insightCount", cachedInsightCount));
 
-        // Проверяет число сохранённых версий и нарушение уникальности.
+        // Проверки количества версий и ограничения уникальности.
         assertThat(cachedInsightCount).isEqualTo(2);
         assertThatThrownBy(() -> insertInsight(event, 1))
                 .satisfies(TestEvidence::exception)
@@ -128,46 +217,65 @@ class AnalysisSchemaIntegrationTest {
     @Test
     @DisplayName("Таблиц чанков, фактов и очереди очистки в PostgreSQL нет")
     void whenInspectSchema_thenChunksAreNotStoredInPostgres() {
-        assertThat(jdbc.queryForList("""
+        assertThat(
+                        jdbc.queryForList(
+                                """
                 SELECT table_name FROM information_schema.tables
                 WHERE table_schema = current_schema()
                     AND table_name IN ('fragments', 'facts', 'document_upload_cleanup')
-                """, String.class)).isEmpty();
+                """,
+                                String.class))
+                .isEmpty();
     }
 
     /** Проверяет наличие комментариев у всех прикладных таблиц и колонок. */
     @Test
     @DisplayName("Все прикладные таблицы и колонки имеют комментарии в PostgreSQL")
     void whenInspectSchema_thenEveryTableAndColumnHasComment() {
-        assertThat(jdbc.queryForList("""
+        assertThat(
+                        jdbc.queryForList(
+                                """
                 SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                 WHERE n.nspname = current_schema() AND c.relkind = 'r'
                     AND c.relname NOT IN ('databasechangelog', 'databasechangeloglock')
                     AND obj_description(c.oid, 'pg_class') IS NULL
-                """, String.class)).isEmpty();
-        assertThat(jdbc.queryForList("""
+                """,
+                                String.class))
+                .isEmpty();
+        assertThat(
+                        jdbc.queryForList(
+                                """
                 SELECT c.relname || '.' || a.attname
                 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                 JOIN pg_attribute a ON a.attrelid = c.oid
                 WHERE n.nspname = current_schema() AND c.relkind = 'r'
                     AND c.relname NOT IN ('databasechangelog', 'databasechangeloglock')
                     AND a.attnum > 0 AND NOT a.attisdropped AND col_description(c.oid, a.attnum) IS NULL
-                """, String.class)).isEmpty();
+                """,
+                                String.class))
+                .isEmpty();
     }
 
     /** Вставляет тестовое событие и возвращает его фактический идентификатор. */
     private UUID insertEvent() {
-        return jdbc.queryForObject("""
+        return jdbc.queryForObject(
+                """
                 INSERT INTO events (title, source_type, source_ref) VALUES ('Событие', 'TEXT', 'Текст') RETURNING id
-                """, UUID.class);
+                """,
+                UUID.class);
     }
 
     /** Вставляет инсайт указанной версии для тестового события. */
     private void insertInsight(UUID event, long version) {
-        jdbc.update("""
+        jdbc.update(
+                """
                 INSERT INTO insights (company_id, event_id, materials_version, payload)
-                VALUES ('schema_company', ?, ?, '{"summary":"Разбор"}')
-                """, event, version);
+                VALUES ('schema_company', ?, ?, '{"facts":[],"bank_view":[],"ai_inference":[],
+                    "hypotheses":[],"features_used":[],"risks":[],"opportunities":[],"actions":[],
+                    "missing_data":["Нет подтверждённых материалов"],"sources":[],"cost_rub":0}')
+                """,
+                event,
+                version);
     }
 
     /** Создаёт сущность без аргументов, задаёт поля и сохраняет её через EntityManager. */

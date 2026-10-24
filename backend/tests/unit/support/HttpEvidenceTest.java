@@ -1,17 +1,16 @@
 package alpha.business.insight.core.qa.connectors;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import alpha.business.insight.core.qa.helpers.TestEvidence;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Story;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /** Проверяет удаление секретов и сохранение безопасного HTTP-контекста для отчёта. */
 @Epic("Backend")
@@ -25,21 +24,36 @@ class HttpEvidenceTest {
     @DisplayName("TestUnitRedactJsonSecretsAndPreserveContext")
     void TestUnitRedactJsonSecretsAndPreserveContext() {
         // Подготавливает HTTP-снимок с секретами в JSON.
-        String evidence = "status=200 url=https://backend.test/auth/me content-type=application/json "
-                + "body={\"username\":\"director\",\"access_token\":\"access-7dfe\","
-                + "\"refresh_token\":\"refresh-90ab\",\"id_token\":\"identity-c341\","
-                + "\"password\":\"password-f084\",\"client_secret\":\"client-112a\"}";
+        String evidence =
+                "status=200 url=https://backend.test/auth/me content-type=application/json "
+                        + "body={\"username\":\"director\",\"access_token\":\"access-7dfe\","
+                        + "\"refresh_token\":\"refresh-90ab\",\"id_token\":\"identity-c341\","
+                        + "\"password\":\"password-f084\",\"client_secret\":\"client-112a\"}";
 
-        TestEvidence.step("Скрыть секретные JSON-поля и сохранить контекст запроса",
-                List.of(new TestEvidence.Input("Входное HTTP evidence", evidence),
-                        new TestEvidence.Input("Окружение", "unit: HttpEvidence.redact(String); no network request")),
-                () -> HttpEvidence.redact(evidence), redacted -> {
+        TestEvidence.step(
+                "Скрыть секретные JSON-поля и сохранить контекст запроса",
+                List.of(
+                        new TestEvidence.Input("Входное HTTP evidence", evidence),
+                        new TestEvidence.Input(
+                                "Окружение",
+                                "unit: HttpEvidence.redact(String); no network request")),
+                () -> HttpEvidence.redact(evidence),
+                redacted -> {
                     // Проверяет, что секреты удалены, а полезный контекст сохранён.
-                    assertNoSecrets(redacted, "access-7dfe", "refresh-90ab", "identity-c341",
-                            "password-f084", "client-112a");
+                    assertNoSecrets(
+                            redacted,
+                            "access-7dfe",
+                            "refresh-90ab",
+                            "identity-c341",
+                            "password-f084",
+                            "client-112a");
 
-                    assertThat(redacted).contains("status=200", "https://backend.test/auth/me",
-                            "application/json", "director");
+                    assertThat(redacted)
+                            .contains(
+                                    "status=200",
+                                    "https://backend.test/auth/me",
+                                    "application/json",
+                                    "director");
                 });
     }
 
@@ -48,18 +62,28 @@ class HttpEvidenceTest {
     @DisplayName("TestUnitRedactUrlEncodedPassword")
     void TestUnitRedactUrlEncodedPassword() {
         // Подготавливает снимок формы с URL-кодированным паролем.
-        String evidence = "status=400 url=https://backend.test/login content-type=application/x-www-form-urlencoded "
-                + "body=username=director&password=secret%2Bvalue%40123&grant_type=password";
+        String evidence =
+                "status=400 url=https://backend.test/login content-type=application/x-www-form-urlencoded "
+                        + "body=username=director&password=secret%2Bvalue%40123&grant_type=password";
 
-        TestEvidence.step("Скрыть пароль в form-urlencoded evidence",
-                List.of(new TestEvidence.Input("Входное HTTP evidence", evidence),
-                        new TestEvidence.Input("Окружение", "unit: HttpEvidence.redact(String); no network request")),
-                () -> HttpEvidence.redact(evidence), redacted -> {
+        TestEvidence.step(
+                "Скрыть пароль в form-urlencoded evidence",
+                List.of(
+                        new TestEvidence.Input("Входное HTTP evidence", evidence),
+                        new TestEvidence.Input(
+                                "Окружение",
+                                "unit: HttpEvidence.redact(String); no network request")),
+                () -> HttpEvidence.redact(evidence),
+                redacted -> {
                     // Проверяет отсутствие пароля и сохранение безопасных полей.
                     assertNoSecrets(redacted, "secret%2Bvalue%40123", "secret+value@123");
 
-                    assertThat(redacted).contains("director", "grant_type=password", "status=400",
-                            "application/x-www-form-urlencoded");
+                    assertThat(redacted)
+                            .contains(
+                                    "director",
+                                    "grant_type=password",
+                                    "status=400",
+                                    "application/x-www-form-urlencoded");
                 });
     }
 
@@ -68,12 +92,18 @@ class HttpEvidenceTest {
     @DisplayName("TestUnitRedactAuthorizationCredentials")
     void TestUnitRedactAuthorizationCredentials() {
         // Подготавливает заголовки с Bearer- и Basic-учётными данными.
-        String evidence = "Authorization: Bearer bearer-secret-45c1\nAuthorization: Basic basic-secret-55d9";
+        String evidence =
+                "Authorization: Bearer bearer-secret-45c1\nAuthorization: Basic basic-secret-55d9";
 
-        TestEvidence.step("Скрыть bearer- и basic-учётные данные",
-                List.of(new TestEvidence.Input("Заголовки HTTP", evidence),
-                        new TestEvidence.Input("Окружение", "unit: HttpEvidence.redact(String); no network request")),
-                () -> HttpEvidence.redact(evidence), redacted -> {
+        TestEvidence.step(
+                "Скрыть bearer- и basic-учётные данные",
+                List.of(
+                        new TestEvidence.Input("Заголовки HTTP", evidence),
+                        new TestEvidence.Input(
+                                "Окружение",
+                                "unit: HttpEvidence.redact(String); no network request")),
+                () -> HttpEvidence.redact(evidence),
+                redacted -> {
                     // Проверяет удаление учётных данных.
                     assertNoSecrets(redacted, "bearer-secret-45c1", "basic-secret-55d9");
                 });
@@ -84,13 +114,19 @@ class HttpEvidenceTest {
     @DisplayName("TestUnitRedactCookieHeaders")
     void TestUnitRedactCookieHeaders() {
         // Подготавливает заголовки Cookie и Set-Cookie с тестовыми значениями.
-        String evidence = "Cookie: session=session-cookie-17fa; theme=dark\n"
-                + "Set-Cookie: refresh=refresh-cookie-1bc2; HttpOnly; Secure";
+        String evidence =
+                "Cookie: session=session-cookie-17fa; theme=dark\n"
+                        + "Set-Cookie: refresh=refresh-cookie-1bc2; HttpOnly; Secure";
 
-        TestEvidence.step("Скрыть значения Cookie и Set-Cookie",
-                List.of(new TestEvidence.Input("Заголовки HTTP", evidence),
-                        new TestEvidence.Input("Окружение", "unit: HttpEvidence.redact(String); no network request")),
-                () -> HttpEvidence.redact(evidence), redacted -> {
+        TestEvidence.step(
+                "Скрыть значения Cookie и Set-Cookie",
+                List.of(
+                        new TestEvidence.Input("Заголовки HTTP", evidence),
+                        new TestEvidence.Input(
+                                "Окружение",
+                                "unit: HttpEvidence.redact(String); no network request")),
+                () -> HttpEvidence.redact(evidence),
+                redacted -> {
                     // Проверяет удаление значений cookie.
                     assertNoSecrets(redacted, "session-cookie-17fa", "refresh-cookie-1bc2");
                 });
@@ -105,27 +141,48 @@ class HttpEvidenceTest {
         String[] titleValues = {"quarterly report.pdf", "draft copy"};
         String[] descriptionValues = {"upload", "password=embedded-secret-3"};
 
-        TestEvidence.step("Скрыть все значения секретных multipart-полей",
-                List.of(new TestEvidence.Input("Поля multipart", Map.of(
-                        "PASSWORD", List.of(passwordValues),
-                        "title", List.of(titleValues),
-                        "description", List.of(descriptionValues))),
-                        new TestEvidence.Input("Окружение", "unit: HttpEvidence.formField(String, String[]); no network request")),
-                () -> Map.of(
-                        "PASSWORD", HttpEvidence.formField("PASSWORD", passwordValues),
-                        "title", HttpEvidence.formField("title", titleValues),
-                        "description", HttpEvidence.formField("description", descriptionValues)),
+        TestEvidence.step(
+                "Скрыть все значения секретных multipart-полей",
+                List.of(
+                        new TestEvidence.Input(
+                                "Поля multipart",
+                                Map.of(
+                                        "PASSWORD", List.of(passwordValues),
+                                        "title", List.of(titleValues),
+                                        "description", List.of(descriptionValues))),
+                        new TestEvidence.Input(
+                                "Окружение",
+                                "unit: HttpEvidence.formField(String, String[]); no network request")),
+                () ->
+                        Map.of(
+                                "PASSWORD", HttpEvidence.formField("PASSWORD", passwordValues),
+                                "title", HttpEvidence.formField("title", titleValues),
+                                "description",
+                                        HttpEvidence.formField("description", descriptionValues)),
                 redacted -> {
                     // Проверяет полное сокрытие секрета и сохранение безопасных значений.
-                    assertThat(redacted).containsEntry("PASSWORD", "PASSWORD=[REDACTED]")
+                    assertThat(redacted)
+                            .containsEntry("PASSWORD", "PASSWORD=[REDACTED]")
                             .containsEntry("title", "title=quarterly report.pdf, draft copy")
-                            .containsEntry("description", "description=upload, password=[REDACTED]");
-                    assertNoSecrets(redacted.toString(), "quoted-secret-1", "line-secret-2", "embedded-secret-3");
+                            .containsEntry(
+                                    "description", "description=upload, password=[REDACTED]");
+                    assertNoSecrets(
+                            redacted.toString(),
+                            "quoted-secret-1",
+                            "line-secret-2",
+                            "embedded-secret-3");
 
-                    String summary = String.join("\n", HttpEvidence.formField("PASSWORD", passwordValues),
-                            HttpEvidence.formField("description", descriptionValues));
-                    assertThat(summary).contains("PASSWORD=[REDACTED]", "description=upload, password=[REDACTED]");
-                    assertNoSecrets(summary, "quoted-secret-1", "line-secret-2", "embedded-secret-3");
+                    String summary =
+                            String.join(
+                                    "\n",
+                                    HttpEvidence.formField("PASSWORD", passwordValues),
+                                    HttpEvidence.formField("description", descriptionValues));
+                    assertThat(summary)
+                            .contains(
+                                    "PASSWORD=[REDACTED]",
+                                    "description=upload, password=[REDACTED]");
+                    assertNoSecrets(
+                            summary, "quoted-secret-1", "line-secret-2", "embedded-secret-3");
                 });
     }
 
@@ -134,16 +191,27 @@ class HttpEvidenceTest {
     @DisplayName("TestUnitPreserveSafeHttpEvidence")
     void TestUnitPreserveSafeHttpEvidence() {
         // Подготавливает HTTP-снимок только с безопасными данными.
-        String evidence = "status=201 url=https://backend.test/documents/42 username=director "
-                + "content-type=application/pdf filename=report.pdf";
+        String evidence =
+                "status=201 url=https://backend.test/documents/42 username=director "
+                        + "content-type=application/pdf filename=report.pdf";
 
-        TestEvidence.step("Сохранить безопасные HTTP-поля без изменения",
-                List.of(new TestEvidence.Input("Входное HTTP evidence", evidence),
-                        new TestEvidence.Input("Окружение", "unit: HttpEvidence.redact(String); no network request")),
-                () -> HttpEvidence.redact(evidence), redacted -> {
+        TestEvidence.step(
+                "Сохранить безопасные HTTP-поля без изменения",
+                List.of(
+                        new TestEvidence.Input("Входное HTTP evidence", evidence),
+                        new TestEvidence.Input(
+                                "Окружение",
+                                "unit: HttpEvidence.redact(String); no network request")),
+                () -> HttpEvidence.redact(evidence),
+                redacted -> {
                     // Проверяет, что безопасные данные остались в снимке.
-                    assertThat(redacted).contains("status=201", "https://backend.test/documents/42", "director",
-                            "application/pdf", "report.pdf");
+                    assertThat(redacted)
+                            .contains(
+                                    "status=201",
+                                    "https://backend.test/documents/42",
+                                    "director",
+                                    "application/pdf",
+                                    "report.pdf");
                 });
     }
 

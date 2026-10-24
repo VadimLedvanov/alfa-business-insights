@@ -1,15 +1,12 @@
 package alpha.business.insight.core.qa.documents.unit;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import alpha.business.insight.core.qa.helpers.TestEvidence;
 import alpha.business.insight.core.service.DocumentStorage;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Story;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -17,8 +14,10 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Проверяет запись, чтение, удаление и защиту путей локального хранилища PDF. */
 @Epic("Backend")
@@ -27,7 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Tag("unit")
 @Tag("documents")
 class DocumentStorageTest {
-    private static final UUID SHARDED_DOCUMENT_ID = UUID.fromString("12345678-1234-5678-9abc-def012345678");
+    private static final UUID SHARDED_DOCUMENT_ID =
+            UUID.fromString("12345678-1234-5678-9abc-def012345678");
     private static final String SHARDED_RELATIVE_PATH =
             "12/34/56/12345678-1234-5678-9abc-def012345678.pdf";
 
@@ -42,20 +42,30 @@ class DocumentStorageTest {
         byte[] original = "%PDF-1.7\nТекст\n%%EOF".getBytes(StandardCharsets.UTF_8);
 
         // Сохраняет и читает PDF через API хранилища.
-        TestEvidence.step("Сохранить и прочитать PDF по шардированному пути",
-                List.of(new TestEvidence.Input("documentId", id),
+        TestEvidence.step(
+                "Сохранить и прочитать PDF по шардированному пути",
+                List.of(
+                        new TestEvidence.Input("documentId", id),
                         new TestEvidence.Input("PDF", original)),
                 () -> {
                     storage.write(id, original);
-                    return Map.of("relativePath", storage.relativePath(id),
-                            "file", fileDetails(root.resolve(storage.relativePath(id))),
-                            "readBytes", storage.read(id).getContentAsByteArray());
-                }, actual -> {
-                    assertThat(actual.get("relativePath")).as("относительный путь документа в шардах")
+                    return Map.of(
+                            "relativePath",
+                            storage.relativePath(id),
+                            "file",
+                            fileDetails(root.resolve(storage.relativePath(id))),
+                            "readBytes",
+                            storage.read(id).getContentAsByteArray());
+                },
+                actual -> {
+                    assertThat(actual.get("relativePath"))
+                            .as("относительный путь документа в шардах")
                             .isEqualTo(SHARDED_RELATIVE_PATH);
-                    assertThat(root.resolve(SHARDED_RELATIVE_PATH)).as("байты по шардированному пути")
+                    assertThat(root.resolve(SHARDED_RELATIVE_PATH))
+                            .as("байты по шардированному пути")
                             .hasBinaryContent(original);
-                    assertThat(actual.get("readBytes")).as("байты, прочитанные через хранилище")
+                    assertThat(actual.get("readBytes"))
+                            .as("байты, прочитанные через хранилище")
                             .isEqualTo(original);
                 });
     }
@@ -67,24 +77,37 @@ class DocumentStorageTest {
         var storage = new DocumentStorage(root.toString());
         UUID id = UUID.randomUUID();
         byte[] original = "%PDF-1.4 first".getBytes(StandardCharsets.UTF_8);
-        TestEvidence.step("Сохранить исходную версию PDF",
-                List.of(new TestEvidence.Input("documentId", id),
+        TestEvidence.step(
+                "Сохранить исходную версию PDF",
+                List.of(
+                        new TestEvidence.Input("documentId", id),
                         new TestEvidence.Input("PDF", original)),
                 () -> {
                     storage.write(id, original);
-                    return Map.of("relativePath", storage.relativePath(id),
-                            "file", fileDetails(root.resolve(storage.relativePath(id))));
-                }, actual -> {
+                    return Map.of(
+                            "relativePath",
+                            storage.relativePath(id),
+                            "file",
+                            fileDetails(root.resolve(storage.relativePath(id))));
+                },
+                actual -> {
                     assertThat(root.resolve(storage.relativePath(id))).hasBinaryContent(original);
                 });
 
         byte[] replacement = "%PDF-1.4 second".getBytes(StandardCharsets.UTF_8);
-        TestEvidence.stepThrows("Отклонить перезапись и сохранить исходные байты",
-                List.of(new TestEvidence.Input("documentId", id), new TestEvidence.Input("Новый PDF", replacement)),
-                () -> storage.write(id, replacement), error -> {
+        TestEvidence.stepThrows(
+                "Отклонить перезапись и сохранить исходные байты",
+                List.of(
+                        new TestEvidence.Input("documentId", id),
+                        new TestEvidence.Input("Новый PDF", replacement)),
+                () -> storage.write(id, replacement),
+                error -> {
                     assertThat(error).isInstanceOf(FileAlreadyExistsException.class);
-                    TestEvidence.output("Существующий файл", fileDetails(root.resolve(storage.relativePath(id))));
-                    assertThat(storage.read(id).getContentAsByteArray()).as("исходные байты после отказа перезаписи")
+                    TestEvidence.output(
+                            "Существующий файл",
+                            fileDetails(root.resolve(storage.relativePath(id))));
+                    assertThat(storage.read(id).getContentAsByteArray())
+                            .as("исходные байты после отказа перезаписи")
                             .isEqualTo(original);
                 });
     }
@@ -96,13 +119,18 @@ class DocumentStorageTest {
         var storage = new DocumentStorage(root.toString());
         String relativePath = storage.relativePath(UUID.randomUUID());
 
-        TestEvidence.step("Повторно удалить отсутствующий файл",
-                List.of(new TestEvidence.Input("relativePath", relativePath)), () -> {
+        TestEvidence.step(
+                "Повторно удалить отсутствующий файл",
+                List.of(new TestEvidence.Input("relativePath", relativePath)),
+                () -> {
                     storage.delete(relativePath);
                     storage.delete(relativePath);
                     return filesUnderRoot();
-                }, actual -> assertThat(actual).as("файлы после повторного удаления отсутствующего PDF")
-                        .isEmpty());
+                },
+                actual ->
+                        assertThat(actual)
+                                .as("файлы после повторного удаления отсутствующего PDF")
+                                .isEmpty());
     }
 
     /** Проверяет отказ при попытке выйти за корневой каталог хранилища. */
@@ -111,7 +139,8 @@ class DocumentStorageTest {
     void TestUnitRejectStoragePathTraversal() {
         var storage = new DocumentStorage(root.toString());
 
-        TestEvidence.stepThrows("Отклонить путь за пределами корня хранилища",
+        TestEvidence.stepThrows(
+                "Отклонить путь за пределами корня хранилища",
                 List.of(new TestEvidence.Input("relativePath", "../../outside.pdf")),
                 () -> storage.delete("../../outside.pdf"),
                 error -> assertThat(error).isInstanceOf(IllegalArgumentException.class));
@@ -126,25 +155,32 @@ class DocumentStorageTest {
         byte[] original = "%PDF-1.5 legacy".getBytes(StandardCharsets.UTF_8);
         Files.write(root.resolve(id + ".pdf"), original);
 
-        TestEvidence.step("Прочитать PDF, оставшийся в старом плоском формате",
-                List.of(new TestEvidence.Input("documentId", id),
-                        new TestEvidence.Input("Файл в старом формате", fileDetails(root.resolve(id + ".pdf")))),
-                () -> storage.read(id).getContentAsByteArray(), actual -> assertThat(actual)
-                        .as("байты PDF в прежнем плоском формате").isEqualTo(original));
+        TestEvidence.step(
+                "Прочитать PDF, оставшийся в старом плоском формате",
+                List.of(
+                        new TestEvidence.Input("documentId", id),
+                        new TestEvidence.Input(
+                                "Файл в старом формате", fileDetails(root.resolve(id + ".pdf")))),
+                () -> storage.read(id).getContentAsByteArray(),
+                actual ->
+                        assertThat(actual)
+                                .as("байты PDF в прежнем плоском формате")
+                                .isEqualTo(original));
     }
 
     /** Формирует фактические сведения о файле для вложения в Allure. */
     private Map<String, Object> fileDetails(Path file) throws Exception {
         byte[] bytes = Files.readAllBytes(file);
-        return Map.of(
-                "path", root.relativize(file).toString(),
-                "content", bytes);
+        return Map.of("path", root.relativize(file).toString(), "content", bytes);
     }
 
     /** Возвращает относительные пути обычных файлов в тестовом хранилище. */
     private List<String> filesUnderRoot() throws Exception {
         try (var paths = Files.walk(root)) {
-            return paths.filter(Files::isRegularFile).map(root::relativize).map(Path::toString).toList();
+            return paths.filter(Files::isRegularFile)
+                    .map(root::relativize)
+                    .map(Path::toString)
+                    .toList();
         }
     }
 }

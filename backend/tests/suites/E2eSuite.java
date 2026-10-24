@@ -14,5 +14,4 @@ import org.junit.platform.suite.api.SuiteDisplayName;
 @IncludeEngines("junit-jupiter")
 @IncludeTags("e2e")
 @ExcludeTags("smoke")
-public class E2eSuite {
-}
+public class E2eSuite {}

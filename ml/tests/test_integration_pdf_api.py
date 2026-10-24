@@ -312,15 +312,15 @@ def test_integration_multpage_pdf_keeps_page_numbers_and_document_id(ml_http: ht
 @allure.parent_suite("ML")
 @allure.suite("Integration")
 @allure.sub_suite("PDF")
-@allure.title("TestIntegrationMlPdfChunking — разбиение сохраняет порядок слов")
+@allure.title("TestIntegrationMlPdfChunking — перекрытие не теряет и не переставляет слова")
 @allure.description("""Шаги:
 1. Передать PDF со страницей из 620 уникальных слов.
 1.1. Отправить PDF и сохранить HTTP evidence.
-1.2. Объединить слова чанков и проверить известный порядок и страницу.
+1.2. Проверить непрерывность чанков, допустимое соседнее перекрытие и физическую страницу.
 
-Ожидание: все исходные слова встречаются в исходном порядке; допустимое перекрытие чанков не считается ошибкой.""")
+Ожидание: чанки покрывают все исходные слова без пропусков и перестановок; соседние чанки могут перекрываться.""")
 def test_integration_long_page_chunks_preserve_word_order(ml_http: httpx.Client) -> None:
-    """Проверяет полноту и порядок слов, разрешая перекрытие соседних чанков."""
+    """Проверяет непрерывное покрытие исходных слов с возможным соседним перекрытием."""
     words = [f"word{i:03d}" for i in range(620)]
     pdf = _make_pdf([" ".join(words)])
     headers = {"Content-Type": "application/pdf", "Accept": "application/json"}
@@ -338,18 +338,44 @@ def test_integration_long_page_chunks_preserve_word_order(ml_http: httpx.Client)
                 f"получено {[chunk['page'] for chunk in chunks]}"
             )
             assert all(chunk["text"].strip() for chunk in chunks), "Текст каждого чанка должен быть непустым"
-            actual_words = [word for chunk in chunks for word in chunk["text"].split()]
-            expected_words = set(words)
-            seen_words: set[str] = set()
-            first_seen_words: list[str] = []
-            for word in actual_words:
-                assert word in expected_words, f"В чанках появился текст, которого нет в исходном PDF: {word!r}"
-                if word not in seen_words:
-                    first_seen_words.append(word)
-                    seen_words.add(word)
-            assert first_seen_words == words, (
-                "После удаления допустимых повторов перекрытия должен сохраниться исходный порядок всех слов; "
-                f"ожидалось {len(words)} слов, получено {len(first_seen_words)}"
+            word_positions = {word: index for index, word in enumerate(words)}
+            covered_end = 0
+            previous_start = 0
+            for index, chunk in enumerate(chunks):
+                chunk_words = chunk["text"].split()
+                start = word_positions.get(chunk_words[0], -1)
+                end = start + len(chunk_words)
+                assert start >= 0, (
+                    f"Чанк {index} начинается со слова вне исходной страницы; "
+                    f"ожидалось слово из исходного PDF, получено {chunk_words[0]!r}"
+                )
+                assert words[start:end] == chunk_words, (
+                    f"Чанк {index} должен точно совпадать с непрерывным фрагментом исходной страницы "
+                    f"с позиции {start}; ожидалось {words[start:end]!r}, получено {chunk_words!r}"
+                )
+                if index == 0:
+                    assert start == 0, (
+                        f"Первый чанк должен начинаться с первого слова исходной страницы; "
+                        f"ожидалась позиция 0, получена {start}"
+                    )
+                assert start <= covered_end, (
+                    f"Между чанками пропущены исходные слова перед чанком {index}; "
+                    f"покрытие дошло до позиции {covered_end}, следующий чанк начинается с {start}"
+                )
+                assert start >= previous_start, (
+                    f"Чанк {index} переставлен назад относительно предыдущего; "
+                    f"предыдущая позиция {previous_start}, текущая позиция {start}"
+                )
+                assert end > covered_end, (
+                    f"Чанк {index} не продвигает покрытие исходной страницы; "
+                    f"текущее покрытие до {covered_end}, конец чанка {end}"
+                )
+                previous_start = start
+                covered_end = end
+
+            assert covered_end == len(words), (
+                f"Чанки должны покрыть всю исходную страницу; ожидалось {len(words)} слов, "
+                f"покрыто {covered_end}"
             )
             assert [chunk["ordinal"] for chunk in chunks] == list(range(len(chunks))), (
                 f"Ordinal длинной страницы должны быть последовательными от нуля; "
@@ -591,20 +617,21 @@ def test_integration_invalid_document_id_returns_400(ml_http: httpx.Client) -> N
 @allure.parent_suite("ML")
 @allure.suite("Integration")
 @allure.sub_suite("PDF")
-@allure.title("TestIntegrationMlPdfSizeLimit — превышение 20 МиБ отклонено")
+@allure.title("TestIntegrationMlPdfSizeLimit — превышение 50 МиБ отклонено")
 @allure.description("""Шаги:
-1. Дополнить валидный PDF пробелами до 20 971 521 байта.
+1. Дополнить валидный PDF пробелами до 52 428 801 байта.
 1.1. Сохранить исходную сигнатуру и сформировать HTTP-тело.
 1.2. Отправить тело без загрузки большого файла в Allure-вложение.
 1.3. Проверить HTTP-статус.
 
 Ожидание: API явно отказывает с HTTP 400 или 413. HTTP 413 рекомендован контрактом.""")
-def test_integration_pdf_over_20_mib_returns_413(ml_http: httpx.Client) -> None:
+def test_integration_pdf_over_50_mib_returns_413(ml_http: httpx.Client) -> None:
     """Проверяет лимит PDF, используя валидный документ с хвостовыми пробелами."""
     document_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    size_limit = 20_971_520
+    # Опубликованный Java OpenAPI задаёт 50 МиБ; ml-document-contract.md пока содержит старый лимит 20 МиБ.
+    size_limit = 50 * 1024 * 1024
     headers = {"Content-Type": "application/pdf", "Accept": "application/json"}
-    with allure.step("1. Подготовить PDF размером выше 20 МиБ"):
+    with allure.step("1. Подготовить PDF размером выше 50 МиБ"):
         with allure.step("1.1. Проверить размер и сигнатуру исходных байтов"):
             base_pdf = _make_pdf(["A valid PDF padded with trailing whitespace"])
             pdf = base_pdf + b" " * (size_limit + 1 - len(base_pdf))

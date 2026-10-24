@@ -12,5 +12,4 @@ import org.junit.platform.suite.api.SuiteDisplayName;
 @SelectPackages("alpha.business.insight.core")
 @IncludeEngines("junit-jupiter")
 @IncludeTags("schema")
-public class SchemaSuite {
-}
+public class SchemaSuite {}

@@ -7,7 +7,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomiz
 public final class MockMvcEvidenceBuilderCustomizer implements MockMvcBuilderCustomizer {
     /** Добавляет обработчик фактического результата к экземпляру MockMvc. */
     @Override
-    public void customize(org.springframework.test.web.servlet.setup.ConfigurableMockMvcBuilder<?> builder) {
+    public void customize(
+            org.springframework.test.web.servlet.setup.ConfigurableMockMvcBuilder<?> builder) {
         builder.alwaysDo(new MockMvcEvidenceResultHandler());
     }
 }

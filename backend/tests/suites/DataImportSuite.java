@@ -12,5 +12,4 @@ import org.junit.platform.suite.api.SuiteDisplayName;
 @SelectPackages("alpha.business.insight.core")
 @IncludeEngines("junit-jupiter")
 @IncludeTags("data-import")
-public class DataImportSuite {
-}
+public class DataImportSuite {}

@@ -1,11 +1,6 @@
 package alpha.business.insight.core.qa.support;
 
 import alpha.business.insight.core.qa.helpers.TestEvidence;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
-import org.springframework.jdbc.core.JdbcTemplate;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,28 +19,39 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Собирает ограниченные снимки состояния известных тестовых фикстур без их изменения. */
 final class LegacyTestEvidence {
-    private static final Set<String> CSV_TABLES = Set.of(
-            "companies", "person_company_links", "company_payment_summaries", "databasechangelog");
-    private static final Set<String> COMPANY_TABLES = Set.of(
-            "companies", "events", "user_company_access", "insights");
+    private static final Set<String> CSV_TABLES =
+            Set.of(
+                    "companies",
+                    "person_company_links",
+                    "company_payment_summaries",
+                    "databasechangelog");
+    private static final Set<String> COMPANY_TABLES =
+            Set.of("companies", "events", "user_company_access", "insights");
 
     /** Запрещает создавать экземпляры утилиты для снимков фикстур. */
-    private LegacyTestEvidence() {
-    }
+    private LegacyTestEvidence() {}
 
     /** Прикладывает снимки базы и файловых фикстур до или после вызова теста. */
-    static void attach(ExtensionContext context, ReflectiveInvocationContext<Method> invocationContext,
-                       boolean before) {
+    static void attach(
+            ExtensionContext context,
+            ReflectiveInvocationContext<Method> invocationContext,
+            boolean before) {
         String phase = before ? "до" : "после";
         try {
             List<Object> instances = context.getRequiredTestInstances().getAllInstances();
             JdbcTemplate jdbc = jdbcTemplate(instances);
             if (jdbc != null) {
-                capture("PostgreSQL " + phase, before, () -> databaseSnapshot(jdbc,
-                        context.getRequiredTestClass(), instances));
+                capture(
+                        "PostgreSQL " + phase,
+                        before,
+                        () -> databaseSnapshot(jdbc, context.getRequiredTestClass(), instances));
             }
             for (Path root : fixtureRoots(context, instances, invocationContext)) {
                 capture("Файлы тестовой фикстуры " + phase, before, () -> storageSnapshot(root));
@@ -87,13 +93,19 @@ final class LegacyTestEvidence {
         for (Object instance : instances) {
             for (Class<?> type = instance.getClass(); type != null; type = type.getSuperclass()) {
                 for (Field field : type.getDeclaredFields()) {
-                    if (field.getName().equals("jdbc") && JdbcTemplate.class.isAssignableFrom(field.getType())) {
+                    if (field.getName().equals("jdbc")
+                            && JdbcTemplate.class.isAssignableFrom(field.getType())) {
                         try {
                             field.setAccessible(true);
-                            Object value = field.get(Modifier.isStatic(field.getModifiers()) ? null : instance);
+                            Object value =
+                                    field.get(
+                                            Modifier.isStatic(field.getModifiers())
+                                                    ? null
+                                                    : instance);
                             if (value instanceof JdbcTemplate jdbc) return jdbc;
                         } catch (ReflectiveOperationException failure) {
-                            throw new IllegalStateException("Не удалось прочитать fixture JdbcTemplate", failure);
+                            throw new IllegalStateException(
+                                    "Не удалось прочитать fixture JdbcTemplate", failure);
                         }
                     }
                 }
@@ -103,13 +115,16 @@ final class LegacyTestEvidence {
     }
 
     /** Сохраняет ограниченные строки выбранных таблиц и комментарии схемы при необходимости. */
-    private static Map<String, Object> databaseSnapshot(JdbcTemplate jdbc, Class<?> testClass,
-                                                        List<Object> instances) {
-        List<String> availableTables = jdbc.queryForList("""
+    private static Map<String, Object> databaseSnapshot(
+            JdbcTemplate jdbc, Class<?> testClass, List<Object> instances) {
+        List<String> availableTables =
+                jdbc.queryForList(
+                        """
                 SELECT table_name FROM information_schema.tables
                 WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'
                 ORDER BY table_name LIMIT 51
-                """, String.class);
+                """,
+                        String.class);
         boolean tableListTruncated = availableTables.size() > 50;
         if (tableListTruncated) availableTables = availableTables.subList(0, 50);
         Set<String> selectedTables = selectedTables(testClass, instances, availableTables);
@@ -118,23 +133,42 @@ final class LegacyTestEvidence {
             if (!selectedTables.contains(table)) continue;
             String identifier = "\"" + table.replace("\"", "\"\"") + "\"";
             Long rowCount = jdbc.queryForObject("SELECT count(*) FROM " + identifier, Long.class);
-            List<String> rows = jdbc.queryForList("SELECT to_jsonb(t)::text FROM " + identifier
-                    + " t ORDER BY t.ctid LIMIT 20", String.class);
-            snapshot.put(table, Map.of("rowCount", rowCount, "sampleRows", rows,
-                    "truncated", rowCount > rows.size()));
+            List<String> rows =
+                    jdbc.queryForList(
+                            "SELECT to_jsonb(t)::text FROM "
+                                    + identifier
+                                    + " t ORDER BY t.ctid LIMIT 20",
+                            String.class);
+            snapshot.put(
+                    table,
+                    Map.of(
+                            "rowCount",
+                            rowCount,
+                            "sampleRows",
+                            rows,
+                            "truncated",
+                            rowCount > rows.size()));
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("tables", snapshot);
         result.put("tableListTruncated", tableListTruncated);
-        if (testClass.getName().contains("Schema") || instances.stream()
-                .map(instance -> instance.getClass().getName()).anyMatch(name -> name.contains("Schema"))) {
-            result.put("tableComments", jdbc.queryForList("""
+        if (testClass.getName().contains("Schema")
+                || instances.stream()
+                        .map(instance -> instance.getClass().getName())
+                        .anyMatch(name -> name.contains("Schema"))) {
+            result.put(
+                    "tableComments",
+                    jdbc.queryForList(
+                            """
                     SELECT c.relname AS table_name, obj_description(c.oid, 'pg_class') AS comment
                     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                     WHERE n.nspname = current_schema() AND c.relkind = 'r'
                     ORDER BY c.relname LIMIT 50
                     """));
-            result.put("columnComments", jdbc.queryForList("""
+            result.put(
+                    "columnComments",
+                    jdbc.queryForList(
+                            """
                     SELECT c.relname AS table_name, a.attname AS column_name,
                         col_description(c.oid, a.attnum) AS comment
                     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -148,10 +182,11 @@ final class LegacyTestEvidence {
     }
 
     /** Выбирает таблицы снимка по функциональной области тестового класса. */
-    private static Set<String> selectedTables(Class<?> testClass, List<Object> instances,
-                                              List<String> availableTables) {
+    private static Set<String> selectedTables(
+            Class<?> testClass, List<Object> instances, List<String> availableTables) {
         StringBuilder testNames = new StringBuilder(testClass.getName());
-        instances.stream().map(instance -> instance.getClass().getName())
+        instances.stream()
+                .map(instance -> instance.getClass().getName())
                 .forEach(name -> testNames.append('|').append(name));
         String name = testNames.toString();
         if (name.contains("Csv") || name.contains("DataImport")) {
@@ -160,7 +195,8 @@ final class LegacyTestEvidence {
         if (name.contains("Company")) return intersection(availableTables, COMPANY_TABLES);
         if (name.contains("Document")) return intersection(availableTables, Set.of("documents"));
         if (name.contains("Schema")) {
-            return availableTables.stream().filter(table -> !table.startsWith("databasechangelog"))
+            return availableTables.stream()
+                    .filter(table -> !table.startsWith("databasechangelog"))
                     .collect(java.util.stream.Collectors.toSet());
         }
         return Set.of();
@@ -168,12 +204,16 @@ final class LegacyTestEvidence {
 
     /** Оставляет таблицы, присутствующие в базе и относящиеся к снимку. */
     private static Set<String> intersection(List<String> available, Set<String> relevant) {
-        return available.stream().filter(relevant::contains).collect(java.util.stream.Collectors.toSet());
+        return available.stream()
+                .filter(relevant::contains)
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     /** Собирает каталоги из @TempDir и известной файловой фикстуры документов. */
-    private static List<Path> fixtureRoots(ExtensionContext context, List<Object> instances,
-                                           ReflectiveInvocationContext<Method> invocationContext) {
+    private static List<Path> fixtureRoots(
+            ExtensionContext context,
+            List<Object> instances,
+            ReflectiveInvocationContext<Method> invocationContext) {
         List<Path> roots = new ArrayList<>();
         for (Object instance : instances) {
             for (Class<?> type = instance.getClass(); type != null; type = type.getSuperclass()) {
@@ -181,9 +221,13 @@ final class LegacyTestEvidence {
                     if (!field.isAnnotationPresent(TempDir.class)) continue;
                     try {
                         field.setAccessible(true);
-                        addPath(roots, field.get(Modifier.isStatic(field.getModifiers()) ? null : instance));
+                        addPath(
+                                roots,
+                                field.get(
+                                        Modifier.isStatic(field.getModifiers()) ? null : instance));
                     } catch (ReflectiveOperationException failure) {
-                        throw new IllegalStateException("Не удалось прочитать @TempDir fixture", failure);
+                        throw new IllegalStateException(
+                                "Не удалось прочитать @TempDir fixture", failure);
                     }
                 }
             }
@@ -191,7 +235,8 @@ final class LegacyTestEvidence {
         var parameters = invocationContext.getExecutable().getParameters();
         List<Object> arguments = invocationContext.getArguments();
         for (int index = 0; index < Math.min(parameters.length, arguments.size()); index++) {
-            if (parameters[index].isAnnotationPresent(TempDir.class)) addPath(roots, arguments.get(index));
+            if (parameters[index].isAnnotationPresent(TempDir.class))
+                addPath(roots, arguments.get(index));
         }
         addKnownDocumentStorage(roots, context.getRequiredTestClass());
         return roots.stream().filter(Files::isDirectory).distinct().toList();
@@ -205,7 +250,8 @@ final class LegacyTestEvidence {
             field.setAccessible(true);
             addPath(roots, field.get(null));
         } catch (ReflectiveOperationException failure) {
-            throw new IllegalStateException("Не удалось прочитать document STORAGE fixture", failure);
+            throw new IllegalStateException(
+                    "Не удалось прочитать document STORAGE fixture", failure);
         }
     }
 
@@ -231,13 +277,20 @@ final class LegacyTestEvidence {
                 files.add(actualFile);
             }
         }
-        return Map.of("root", root.getFileName().toString(), "fileCountCaptured", files.size(), "files", files);
+        return Map.of(
+                "root",
+                root.getFileName().toString(),
+                "fileCountCaptured",
+                files.size(),
+                "files",
+                files);
     }
 
     /** Определяет малые текстовые фикстуры, допустимые для вложения в отчёт. */
     private static boolean isSmallTextFixture(Path file, long size) {
         String name = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
-        return size <= 8192 && (name.endsWith(".csv") || name.endsWith(".txt") || name.endsWith(".json"));
+        return size <= 8192
+                && (name.endsWith(".csv") || name.endsWith(".txt") || name.endsWith(".json"));
     }
 
     /** Вычисляет SHA-256 файла потоковым чтением. */

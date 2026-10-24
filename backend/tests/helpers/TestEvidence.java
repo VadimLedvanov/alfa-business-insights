@@ -4,8 +4,6 @@ import alpha.business.insight.core.qa.connectors.HttpEvidence;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.qameta.allure.Allure;
-import org.springframework.web.server.ResponseStatusException;
-
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
@@ -24,60 +22,82 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Добавляет в шаги Allure читаемые снимки фактических данных с редактированием секретов. */
 public final class TestEvidence {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final Set<String> SENSITIVE_FIELDS = Set.of(
-            "password", "access_token", "refresh_token", "id_token", "client_secret",
-            "authorization", "proxy-authorization", "cookie", "set-cookie");
+    private static final Set<String> SENSITIVE_FIELDS =
+            Set.of(
+                    "password",
+                    "access_token",
+                    "refresh_token",
+                    "id_token",
+                    "client_secret",
+                    "authorization",
+                    "proxy-authorization",
+                    "cookie",
+                    "set-cookie");
 
     /** Запрещает создавать экземпляры утилиты для сбора данных Allure. */
-    private TestEvidence() {
-    }
+    private TestEvidence() {}
 
     /** Записывает входные данные, фактический результат и проверяет его внутри шага Allure. */
-    public static <T> T step(String name, List<Input> inputs, ThrowingSupplier<T> operation,
-                             ThrowingConsumer<T> assertions) {
-        return Allure.step(name, () -> {
-            for (Input input : inputs) input(input.name(), input.value());
-            T actual;
-            try {
-                actual = operation.get();
-            } catch (Throwable failure) {
-                exception(failure);
-                throw failure;
-            }
-            output("Actual result", actual);
-            try {
-                assertions.accept(actual);
-            } catch (Throwable failure) {
-                exception(failure);
-                throw failure;
-            }
-            return actual;
-        });
+    public static <T> T step(
+            String name,
+            List<Input> inputs,
+            ThrowingSupplier<T> operation,
+            ThrowingConsumer<T> assertions) {
+        return Allure.step(
+                name,
+                () -> {
+                    for (Input input : inputs) input(input.name(), input.value());
+                    T actual;
+                    try {
+                        actual = operation.get();
+                    } catch (Throwable failure) {
+                        exception(failure);
+                        throw failure;
+                    }
+                    output("Actual result", actual);
+                    try {
+                        assertions.accept(actual);
+                    } catch (Throwable failure) {
+                        exception(failure);
+                        throw failure;
+                    }
+                    return actual;
+                });
     }
 
     /** Записывает входы и фактический исход операции, затем проверяет ожидаемую ошибку. */
-    public static void stepThrows(String name, List<Input> inputs, ThrowingRunnable operation,
-                                  ThrowingConsumer<Throwable> assertions) {
-        Allure.step(name, () -> {
-            for (Input input : inputs) input(input.name(), input.value());
-            Throwable actual = null;
-            try {
-                operation.run();
-            } catch (Throwable failure) {
-                actual = failure;
-            }
-            if (actual == null) {
-                output("Actual operation outcome", Map.of("exception", "none", "completed", true));
-            } else {
-                exception(actual);
-            }
-            assertions.accept(actual);
-            if (actual == null) throw new AssertionError("Expected an exception, but the operation completed normally");
-        });
+    public static void stepThrows(
+            String name,
+            List<Input> inputs,
+            ThrowingRunnable operation,
+            ThrowingConsumer<Throwable> assertions) {
+        Allure.step(
+                name,
+                () -> {
+                    for (Input input : inputs) input(input.name(), input.value());
+                    Throwable actual = null;
+                    try {
+                        operation.run();
+                    } catch (Throwable failure) {
+                        actual = failure;
+                    }
+                    if (actual == null) {
+                        output(
+                                "Actual operation outcome",
+                                Map.of("exception", "none", "completed", true));
+                    } else {
+                        exception(actual);
+                    }
+                    assertions.accept(actual);
+                    if (actual == null)
+                        throw new AssertionError(
+                                "Expected an exception, but the operation completed normally");
+                });
     }
 
     /** Прикладывает снимок фактического входного значения. */
@@ -127,22 +147,30 @@ public final class TestEvidence {
         if (value == null || value instanceof Number || value instanceof Boolean) {
             return value;
         }
-        if (value instanceof UUID || value instanceof TemporalAccessor || value instanceof TemporalAmount
-                || value instanceof URI || value instanceof Path || value instanceof ZoneId
+        if (value instanceof UUID
+                || value instanceof TemporalAccessor
+                || value instanceof TemporalAmount
+                || value instanceof URI
+                || value instanceof Path
+                || value instanceof ZoneId
                 || value instanceof java.util.Date) {
             return HttpEvidence.redact(value.toString());
         }
         if (value instanceof Enum<?> enumeration) return enumeration.name();
-        if (depth >= 8) return Map.of("type", value.getClass().getName(), "snapshot", "nested value omitted");
+        if (depth >= 8)
+            return Map.of("type", value.getClass().getName(), "snapshot", "nested value omitted");
         if (value instanceof byte[] bytes) {
             return Map.of("type", "byte[]", "length", bytes.length, "sha256", sha256(bytes));
         }
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();
-            map.forEach((key, item) -> {
-                String name = String.valueOf(key);
-                result.put(name, isSensitiveField(name) ? "[REDACTED]" : snapshot(item, depth + 1));
-            });
+            map.forEach(
+                    (key, item) -> {
+                        String name = String.valueOf(key);
+                        result.put(
+                                name,
+                                isSensitiveField(name) ? "[REDACTED]" : snapshot(item, depth + 1));
+                    });
             return result;
         }
         if (value instanceof Iterable<?> iterable) {
@@ -164,15 +192,22 @@ public final class TestEvidence {
                     Method accessor = component.getAccessor();
                     if (!accessor.canAccess(value)) accessor.trySetAccessible();
                     String name = component.getName();
-                    result.put(name, isSensitiveField(name)
-                            ? "[REDACTED]" : snapshot(accessor.invoke(value), depth + 1));
+                    result.put(
+                            name,
+                            isSensitiveField(name)
+                                    ? "[REDACTED]"
+                                    : snapshot(accessor.invoke(value), depth + 1));
                 } catch (ReflectiveOperationException failure) {
                     result.put(component.getName(), "<unavailable>");
                 }
             }
             return result;
         }
-        return Map.of("type", value.getClass().getName(), "snapshot", "unsupported object; pass an explicit Map");
+        return Map.of(
+                "type",
+                value.getClass().getName(),
+                "snapshot",
+                "unsupported object; pass an explicit Map");
     }
 
     /** Сериализует подготовленный снимок; при ошибке возвращает краткую диагностическую запись. */
@@ -199,8 +234,7 @@ public final class TestEvidence {
     }
 
     /** Содержит имя и фактическое значение входного параметра шага. */
-    public record Input(String name, Object value) {
-    }
+    public record Input(String name, Object value) {}
 
     /** Описывает операцию, возвращающую значение и допускающую любое исключение. */
     @FunctionalInterface

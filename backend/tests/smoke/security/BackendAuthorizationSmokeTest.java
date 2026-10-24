@@ -1,5 +1,7 @@
 package alpha.business.insight.core.qa.security;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import alpha.business.insight.core.qa.support.RealStackE2eTest;
 import io.qameta.allure.Allure;
 import io.qameta.allure.Epic;
@@ -8,8 +10,6 @@ import io.qameta.allure.Story;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /** Проверяет реальную аутентификацию и роли пользователей через HTTP API. */
 @Epic("Backend")
@@ -23,22 +23,43 @@ class BackendAuthorizationSmokeTest extends RealStackE2eTest {
     @Test
     @DisplayName("TestSmokeKeycloakRealmRoles")
     void TestSmokeKeycloakRealmRoles() throws Exception {
-        Allure.step("Проверить отказ анонимному пользователю", () ->
-                assertThat(backend.get("/auth/me", null).statusCode()).isEqualTo(401));
+        Allure.step(
+                "Проверить отказ анонимному пользователю",
+                () -> {
+                    // Запросить текущего пользователя без токена.
+                    var anonymous = backend.get("/auth/me", null);
 
-        Allure.step("Проверить роль директора", () -> {
-            // Действие
-            var director = json(backend.get("/auth/me", keycloak.accessToken("director", "director-dev")));
+                    // Проверить отказ в аутентификации.
+                    assertThat(anonymous.statusCode()).isEqualTo(401);
+                });
 
-            // Проверка
-            assertThat(director.path("username").asText()).isEqualTo("director");
-            assertThat(director.path("roles").toString()).contains("COMPANY_DIRECTOR");
-        });
+        Allure.step(
+                "Проверить роль директора",
+                () -> {
+                    // Запросить профиль с токеном директора.
+                    var director =
+                            json(
+                                    backend.get(
+                                            "/auth/me",
+                                            keycloak.accessToken("director", "director-dev")));
 
-        Allure.step("Проверить роль системного администратора", () -> {
-            // Действие
-            var admin = json(backend.get("/auth/me", keycloak.accessToken("sysadmin", "sysadmin-dev")));
-            assertThat(admin.path("roles").toString()).contains("SYSTEM_ADMIN");
-        });
+                    // Проверить имя пользователя и роль.
+                    assertThat(director.path("username").asText()).isEqualTo("director");
+                    assertThat(director.path("roles").toString()).contains("COMPANY_DIRECTOR");
+                });
+
+        Allure.step(
+                "Проверить роль системного администратора",
+                () -> {
+                    // Запросить профиль с токеном системного администратора.
+                    var admin =
+                            json(
+                                    backend.get(
+                                            "/auth/me",
+                                            keycloak.accessToken("sysadmin", "sysadmin-dev")));
+
+                    // Проверить роль системного администратора.
+                    assertThat(admin.path("roles").toString()).contains("SYSTEM_ADMIN");
+                });
     }
 }

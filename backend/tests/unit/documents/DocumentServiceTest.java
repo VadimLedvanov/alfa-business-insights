@@ -1,5 +1,14 @@
 package alpha.business.insight.core.qa.documents.unit;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import alpha.business.insight.core.ml.DocumentAnalysis;
 import alpha.business.insight.core.ml.DocumentAnalyzer;
 import alpha.business.insight.core.ml.DocumentChunk;
@@ -13,19 +22,6 @@ import alpha.business.insight.core.service.DocumentVectorStore;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Story;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.io.TempDir;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -38,15 +34,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Проверяет загрузку документа, метаданные и компенсационную очистку в изоляции. */
 @ExtendWith(MockitoExtension.class)
@@ -84,23 +83,35 @@ class DocumentServiceTest {
 
         TestEvidence.step(
                 "Загрузить PDF и получить метаданные успешно проиндексированного документа",
-                List.of(new TestEvidence.Input("Файл", fileDetails(filename)),
+                List.of(
+                        new TestEvidence.Input("Файл", fileDetails(filename)),
                         new TestEvidence.Input("Заголовок", title),
                         new TestEvidence.Input("Дата публикации", publicationDate)),
                 () -> service.upload(file(filename), title, publicationDate),
                 actual -> {
                     String actualSha256 = sha256(PDF);
                     byte[] storedPdf = storage.read(actual.documentId()).getContentAsByteArray();
-                    assertThat(actual.title()).as("нормализованный заголовок").isEqualTo("Обзор ставки");
-                    assertThat(actual.fileName()).as("имя после удаления каталогов из пути загрузки")
+                    assertThat(actual.title())
+                            .as("нормализованный заголовок")
+                            .isEqualTo("Обзор ставки");
+                    assertThat(actual.fileName())
+                            .as("имя после удаления каталогов из пути загрузки")
                             .isEqualTo("rates.pdf");
-                    assertThat(actual.sizeBytes()).as("размер сохранённого PDF").isEqualTo(PDF.length);
-                    assertThat(actual.sha256()).as("SHA-256 исходных байтов").isEqualTo(actualSha256);
-                    assertThat(actual.publicationDate()).as("дата публикации").isEqualTo(publicationDate);
+                    assertThat(actual.sizeBytes())
+                            .as("размер сохранённого PDF")
+                            .isEqualTo(PDF.length);
+                    assertThat(actual.sha256())
+                            .as("SHA-256 исходных байтов")
+                            .isEqualTo(actualSha256);
+                    assertThat(actual.publicationDate())
+                            .as("дата публикации")
+                            .isEqualTo(publicationDate);
                     assertThat(actual.chunkCount()).as("число чанков анализа").isEqualTo(1);
                     assertThat(storedPdf).as("байты PDF в хранилище").isEqualTo(PDF);
-                    TestEvidence.output("Сохранённый оригинал", fileDetails(actual.fileName(), storedPdf));
-                    verify(vectors).index(any(DocumentAnalysis.class), eq(publicationDate), anyLong());
+                    TestEvidence.output(
+                            "Сохранённый оригинал", fileDetails(actual.fileName(), storedPdf));
+                    verify(vectors)
+                            .index(any(DocumentAnalysis.class), eq(publicationDate), anyLong());
                 });
     }
 
@@ -112,17 +123,33 @@ class DocumentServiceTest {
         useStubAnalyzer();
         MultipartFile fileWithoutName = new MockMultipartFile("file", null, "application/pdf", PDF);
 
-        var metadata = TestEvidence.step("Загрузить PDF без имени файла",
-                List.of(new TestEvidence.Input("Файл", Map.of("contentType", "application/pdf",
-                        "filename", "", "content", PDF))),
-                () -> service.upload(fileWithoutName, " ", null),
-                actual -> {
-                    assertThat(actual.fileName()).as("имя документа по умолчанию").isEqualTo("document.pdf");
-                    assertThat(actual.title()).as("заголовок по умолчанию").isEqualTo("document.pdf");
-                    assertThat(storage.read(actual.documentId()).getContentAsByteArray())
-                            .as("байты PDF без переданного имени").isEqualTo(PDF);
-                    TestEvidence.output("Сохранённый оригинал", fileDetails(actual.fileName(), PDF));
-                });
+        var metadata =
+                TestEvidence.step(
+                        "Загрузить PDF без имени файла",
+                        List.of(
+                                new TestEvidence.Input(
+                                        "Файл",
+                                        Map.of(
+                                                "contentType",
+                                                "application/pdf",
+                                                "filename",
+                                                "",
+                                                "content",
+                                                PDF))),
+                        () -> service.upload(fileWithoutName, " ", null),
+                        actual -> {
+                            assertThat(actual.fileName())
+                                    .as("имя документа по умолчанию")
+                                    .isEqualTo("document.pdf");
+                            assertThat(actual.title())
+                                    .as("заголовок по умолчанию")
+                                    .isEqualTo("document.pdf");
+                            assertThat(storage.read(actual.documentId()).getContentAsByteArray())
+                                    .as("байты PDF без переданного имени")
+                                    .isEqualTo(PDF);
+                            TestEvidence.output(
+                                    "Сохранённый оригинал", fileDetails(actual.fileName(), PDF));
+                        });
     }
 
     /** Проверяет отказ для имени с управляющим символом до записи данных. */
@@ -131,11 +158,17 @@ class DocumentServiceTest {
     void TestUnitRejectControlFilenameBeforeWrites() throws Exception {
         String invalidFilename = "bad\nname.pdf";
 
-        TestEvidence.stepThrows("Отклонить имя файла с управляющим символом",
+        TestEvidence.stepThrows(
+                "Отклонить имя файла с управляющим символом",
                 List.of(new TestEvidence.Input("Файл", fileDetails(invalidFilename))),
-                () -> service.upload(file(invalidFilename), null, null), error -> {
-                    assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
-                            actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+                () -> service.upload(file(invalidFilename), null, null),
+                error -> {
+                    assertThat(error)
+                            .isInstanceOfSatisfying(
+                                    ResponseStatusException.class,
+                                    actual ->
+                                            assertThat(actual.getStatusCode())
+                                                    .isEqualTo(HttpStatus.BAD_REQUEST));
                     TestEvidence.output("Файлы в хранилище", regularFiles());
                     assertThat(regularFiles()).as("файлы после отказа до записи").isEmpty();
                     verify(analyzer, never()).analyze(any(), any());
@@ -148,19 +181,34 @@ class DocumentServiceTest {
     @DisplayName("TestUnitCleanupAfterAnalyzerFailure")
     void TestUnitCleanupAfterAnalyzerFailure() throws Exception {
         IllegalStateException analyzerFailure = new IllegalStateException("ML offline");
-        when(analyzer.analyze(any(), any())).thenAnswer(call -> {
-            TestEvidence.output("Фактический сбой анализатора", Map.of("type",
-                    analyzerFailure.getClass().getName(), "message", analyzerFailure.getMessage()));
-            throw analyzerFailure;
-        });
+        when(analyzer.analyze(any(), any()))
+                .thenAnswer(
+                        call -> {
+                            TestEvidence.output(
+                                    "Фактический сбой анализатора",
+                                    Map.of(
+                                            "type",
+                                            analyzerFailure.getClass().getName(),
+                                            "message",
+                                            analyzerFailure.getMessage()));
+                            throw analyzerFailure;
+                        });
 
-        TestEvidence.stepThrows("Вернуть 502 и удалить PDF после сбоя анализа",
+        TestEvidence.stepThrows(
+                "Вернуть 502 и удалить PDF после сбоя анализа",
                 List.of(new TestEvidence.Input("Файл", fileDetails("rates.pdf"))),
-                () -> service.upload(file("rates.pdf"), null, null), error -> {
-                    assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
-                            actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
+                () -> service.upload(file("rates.pdf"), null, null),
+                error -> {
+                    assertThat(error)
+                            .isInstanceOfSatisfying(
+                                    ResponseStatusException.class,
+                                    actual ->
+                                            assertThat(actual.getStatusCode())
+                                                    .isEqualTo(HttpStatus.BAD_GATEWAY));
                     TestEvidence.output("Файлы после компенсации", regularFiles());
-                    assertThat(regularFiles()).as("файлы после компенсации сбоя анализатора").isEmpty();
+                    assertThat(regularFiles())
+                            .as("файлы после компенсации сбоя анализатора")
+                            .isEmpty();
                     verify(vectors, never()).delete(any());
                     verify(repository, never()).saveAndFlush(any());
                 });
@@ -170,18 +218,33 @@ class DocumentServiceTest {
     @Test
     @DisplayName("TestUnitRejectForeignAnalysisDocumentId")
     void TestUnitRejectForeignAnalysisDocumentId() throws Exception {
-        DocumentAnalysis foreignAnalysis = new DocumentAnalysis(UUID.randomUUID(), 1, true,
-                "stub-v1", 1, List.of(new DocumentChunk(0, 1, "text", List.of(1f))));
+        DocumentAnalysis foreignAnalysis =
+                new DocumentAnalysis(
+                        UUID.randomUUID(),
+                        1,
+                        true,
+                        "stub-v1",
+                        1,
+                        List.of(new DocumentChunk(0, 1, "text", List.of(1f))));
         when(analyzer.analyze(any(), any())).thenReturn(foreignAnalysis);
 
-        TestEvidence.stepThrows("Отклонить чужой идентификатор анализа и удалить PDF",
-                List.of(new TestEvidence.Input("Файл", fileDetails("rates.pdf")),
+        TestEvidence.stepThrows(
+                "Отклонить чужой идентификатор анализа и удалить PDF",
+                List.of(
+                        new TestEvidence.Input("Файл", fileDetails("rates.pdf")),
                         new TestEvidence.Input("Ответ анализатора", foreignAnalysis)),
-                () -> service.upload(file("rates.pdf"), null, null), error -> {
-                    assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
-                            actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
+                () -> service.upload(file("rates.pdf"), null, null),
+                error -> {
+                    assertThat(error)
+                            .isInstanceOfSatisfying(
+                                    ResponseStatusException.class,
+                                    actual ->
+                                            assertThat(actual.getStatusCode())
+                                                    .isEqualTo(HttpStatus.BAD_GATEWAY));
                     TestEvidence.output("Файлы после компенсации", regularFiles());
-                    assertThat(regularFiles()).as("файлы после компенсации чужого documentId").isEmpty();
+                    assertThat(regularFiles())
+                            .as("файлы после компенсации чужого documentId")
+                            .isEmpty();
                     verify(vectors, never()).index(any(), any(), anyLong());
                     verify(repository, never()).saveAndFlush(any());
                 });
@@ -193,14 +256,19 @@ class DocumentServiceTest {
     void TestUnitCleanupAfterVectorFailure() throws Exception {
         useStubAnalyzer();
         doThrow(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE))
-                .when(vectors).index(any(), any(), anyLong());
+                .when(vectors)
+                .index(any(), any(), anyLong());
 
-        TestEvidence.stepThrows("Удалить PDF и вектор при ошибке индексации",
+        TestEvidence.stepThrows(
+                "Удалить PDF и вектор при ошибке индексации",
                 List.of(new TestEvidence.Input("Файл", fileDetails("rates.pdf"))),
-                () -> service.upload(file("rates.pdf"), null, null), error -> {
+                () -> service.upload(file("rates.pdf"), null, null),
+                error -> {
                     assertThat(error).isInstanceOf(ResponseStatusException.class);
                     TestEvidence.output("Файлы после компенсации", regularFiles());
-                    assertThat(regularFiles()).as("файлы после компенсации ошибки индексации").isEmpty();
+                    assertThat(regularFiles())
+                            .as("файлы после компенсации ошибки индексации")
+                            .isEmpty();
                     verify(vectors).delete(any());
                     verify(repository, never()).saveAndFlush(any());
                 });
@@ -213,32 +281,54 @@ class DocumentServiceTest {
         UUID id = UUID.randomUUID();
         when(repository.findById(id)).thenReturn(Optional.empty());
 
-        TestEvidence.stepThrows("Вернуть 404 для неизвестного документа",
-                List.of(new TestEvidence.Input("documentId", id)), () -> service.get(id), error ->
-                        assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
-                                actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND)));
+        TestEvidence.stepThrows(
+                "Вернуть 404 для неизвестного документа",
+                List.of(new TestEvidence.Input("documentId", id)),
+                () -> service.get(id),
+                error ->
+                        assertThat(error)
+                                .isInstanceOfSatisfying(
+                                        ResponseStatusException.class,
+                                        actual ->
+                                                assertThat(actual.getStatusCode())
+                                                        .isEqualTo(HttpStatus.NOT_FOUND)));
     }
 
     /** Проверяет отказ для нечитаемого файла и отсутствие записей в хранилище. */
     @Test
     @DisplayName("TestUnitRejectUnreadableUpload")
     void TestUnitRejectUnreadableUpload() {
-        MultipartFile unreadable = new MockMultipartFile(
-                "file", "rates.pdf", "application/pdf", PDF) {
-            /** Имитирует сбой чтения тела multipart-файла. */
-            @Override
-            public InputStream getInputStream() throws IOException {
-                throw new IOException("read failed");
-            }
-        };
+        MultipartFile unreadable =
+                new MockMultipartFile("file", "rates.pdf", "application/pdf", PDF) {
+                    /** Имитирует сбой чтения тела multipart-файла. */
+                    @Override
+                    public InputStream getInputStream() throws IOException {
+                        throw new IOException("read failed");
+                    }
+                };
 
-        TestEvidence.stepThrows("Отклонить нечитаемый файл без записи",
-                List.of(new TestEvidence.Input("MultipartFile", Map.of("filename", "rates.pdf",
-                        "contentType", "application/pdf", "reportedSize", PDF.length,
-                        "getInputStream", "throws IOException: read failed"))),
-                () -> service.upload(unreadable, null, null), error -> {
-                    assertThat(error).isInstanceOfSatisfying(ResponseStatusException.class,
-                            actual -> assertThat(actual.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        TestEvidence.stepThrows(
+                "Отклонить нечитаемый файл без записи",
+                List.of(
+                        new TestEvidence.Input(
+                                "MultipartFile",
+                                Map.of(
+                                        "filename",
+                                        "rates.pdf",
+                                        "contentType",
+                                        "application/pdf",
+                                        "reportedSize",
+                                        PDF.length,
+                                        "getInputStream",
+                                        "throws IOException: read failed"))),
+                () -> service.upload(unreadable, null, null),
+                error -> {
+                    assertThat(error)
+                            .isInstanceOfSatisfying(
+                                    ResponseStatusException.class,
+                                    actual ->
+                                            assertThat(actual.getStatusCode())
+                                                    .isEqualTo(HttpStatus.BAD_REQUEST));
                     TestEvidence.output("Файлы после отказа", regularFiles());
                     assertThat(root).as("каталог загрузки после ошибки чтения").isEmptyDirectory();
                 });
@@ -251,16 +341,21 @@ class DocumentServiceTest {
 
     /** Возвращает сохранённую сущность из мока репозитория в успешных сценариях. */
     private void stubSaveAndFlush() {
-        when(repository.saveAndFlush(any(KnowledgeDocument.class))).thenAnswer(call -> call.getArgument(0));
+        when(repository.saveAndFlush(any(KnowledgeDocument.class)))
+                .thenAnswer(call -> call.getArgument(0));
     }
 
     /** Настраивает синтетический анализатор, строящий ответ из фактического PDF. */
     private void useStubAnalyzer() {
-        when(analyzer.analyze(any(), any())).thenAnswer(call -> {
-            DocumentAnalysis analysis = new StubDocumentAnalyzer().analyze(call.getArgument(0), call.getArgument(1));
-            TestEvidence.output("Фактический ответ анализатора", analysis);
-            return analysis;
-        });
+        when(analyzer.analyze(any(), any()))
+                .thenAnswer(
+                        call -> {
+                            DocumentAnalysis analysis =
+                                    new StubDocumentAnalyzer()
+                                            .analyze(call.getArgument(0), call.getArgument(1));
+                            TestEvidence.output("Фактический ответ анализатора", analysis);
+                            return analysis;
+                        });
     }
 
     /** Возвращает поля файла, пригодные для безопасного приложения к Allure. */

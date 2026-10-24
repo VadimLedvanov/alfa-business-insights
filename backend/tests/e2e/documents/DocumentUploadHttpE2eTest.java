@@ -1,18 +1,17 @@
 package alpha.business.insight.core.qa.documents;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import alpha.business.insight.core.qa.helpers.SyntheticPdf;
 import alpha.business.insight.core.qa.support.RealStackE2eTest;
 import io.qameta.allure.Allure;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Story;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-
-import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /** Проверяет живой HTTP-доступ к документам на реальном стеке приложения. */
 @Epic("Backend")
@@ -28,20 +27,25 @@ class DocumentUploadHttpE2eTest extends RealStackE2eTest {
         // Подготовка
         var uploadFixture = SyntheticPdf.multipartUpload();
 
-        Allure.step("Проверить, что директор не может загружать документы", () -> {
-            // Подготовка
-            var directorToken = keycloak.accessToken("director", "director-dev");
-            var upload = backend.postMultipart("/admin/documents", uploadFixture, directorToken);
+        Allure.step(
+                "Проверить, что директор не может загружать документы",
+                () -> {
+                    // Подготовить токен директора и multipart-запрос.
+                    var directorToken = keycloak.accessToken("director", "director-dev");
+                    var upload =
+                            backend.postMultipart("/admin/documents", uploadFixture, directorToken);
 
-            // Проверка
-            assertThat(upload.statusCode()).isEqualTo(403);
-        });
-        Allure.step("Проверить, что анонимный пользователь не может читать документы", () -> {
-            // Действие
-            var anonymousRead = backend.get("/documents/" + UUID.randomUUID(), null);
+                    // Проверить запрет загрузки.
+                    assertThat(upload.statusCode()).isEqualTo(403);
+                });
+        Allure.step(
+                "Проверить, что анонимный пользователь не может читать документы",
+                () -> {
+                    // Запросить случайный документ без токена.
+                    var anonymousRead = backend.get("/documents/" + UUID.randomUUID(), null);
 
-            // Проверка
-            assertThat(anonymousRead.statusCode()).isEqualTo(401);
-        });
+                    // Проверить отказ анонимному пользователю.
+                    assertThat(anonymousRead.statusCode()).isEqualTo(401);
+                });
     }
 }

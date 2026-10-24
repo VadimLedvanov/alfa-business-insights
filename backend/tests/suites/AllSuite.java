@@ -10,5 +10,4 @@ import org.junit.platform.suite.api.SuiteDisplayName;
 @SuiteDisplayName("Все тесты backend")
 @SelectPackages("alpha.business.insight.core")
 @IncludeEngines("junit-jupiter")
-public class AllSuite {
-}
+public class AllSuite {}

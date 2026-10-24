@@ -367,17 +367,6 @@ BOM и разделитель внутри кавычек сохраняют з�
 
 **Ожидаемый результат:** Удалённая модель не создаётся; клиент возвращает stub-ответ.
 
-### TestUnitSendOpenAiCompatibleJsonRequest
-
-Совместимый OpenAI запрос и JSON ответ
-
-`alpha.business.insight.core.insight.LlmClientTest#sendsOpenAiCompatibleRequestAndReadsJson`
-
-1. Поднять локальный HTTP-сервер и вызвать клиент с JSON-контекстом.
-2. Проверить путь, авторизацию, модель, лимит токенов, формат JSON и распарсенный ответ.
-
-**Ожидаемый результат:** Клиент отправляет совместимый запрос на /v1/chat/completions с заданными заголовками и параметрами и читает JSON-ответ.
-
 ### TestUnitDisableRemoteChatWithEmptyKey
 
 Отключённый чат не создаёт удалённую модель
@@ -389,28 +378,6 @@ BOM и разделитель внутри кавычек сохраняют з�
 
 **Ожидаемый результат:** Клиент остаётся stub и не создаёт удалённую модель.
 
-### TestUnitTimeoutLlmCallWithoutRetry
-
-Тайм-аут вызова LLM без повтора
-
-`alpha.business.insight.core.insight.LlmClientTest#stalledLlmCallTimesOutWithoutRetry`
-
-1. Запустить локальный сервер, который удерживает запрос дольше установленного тайм-аута.
-2. Проверить статус исключения, длительность и число запросов.
-
-**Ожидаемый результат:** Вызов завершается 503 до трёх секунд и не повторяется.
-
-### TestUnitHideProviderErrorAndAvoidRetry
-
-Скрытие ошибки провайдера без повтора
-
-`alpha.business.insight.core.insight.LlmClientTest#budgetErrorIsNotRetriedAndDoesNotExposeProviderBody`
-
-1. Ответить локального сервера HTTP 429 с секретным телом.
-2. Проверить статус, отсутствие секрета/ключа в исключении и число запросов.
-
-**Ожидаемый результат:** Клиент возвращает 503, не раскрывает тело провайдера или API-ключ и выполняет ровно один запрос.
-
 ### TestUnitCreateQdrantClientWithoutNetworkWait
 
 Создание клиента Qdrant без ожидания сети
@@ -421,6 +388,18 @@ BOM и разделитель внутри кавычек сохраняют з�
 2. Создать Qdrant client и проверить тайм-аут операции создания.
 
 **Ожидаемый результат:** Создание клиента завершается не дольше двух секунд и не инициирует блокирующий сетевой вызов.
+
+### TestUnitAcceptPaymentBoundaryValues
+
+Граничные допустимые значения платежа
+
+`alpha.business.insight.core.qa.dataimport.CsvImportServiceTest#TestUnitAcceptPaymentBoundaryValues`
+
+1. Подготовить корректные строки с суммой и количеством (0,0), (0.01,1), (1,9223372036854775806), (1,9223372036854775807)
+2. Импортировать CSV с перехватом входа COPY
+3. Сверить число принятых и отклонённых строк, сумму численно и точное количество платежей
+
+**Ожидаемый результат:** Все четыре значения допускаются публичной схемой NUMERIC >= 0 и BIGINT >= 0; значение счётчика не теряет точность, отклонённых строк нет.
 
 ## Integration
 
@@ -523,14 +502,14 @@ OpenAPI описывает API контекста компании
 
 **Ожидаемый результат:** Ожидается стабильная сортировка, null для долей и признак paymentShares без деления на ноль.
 
-### TestIntegrationRollsBackMalformedCsvAndRetries
+### TestIntegrationPreserveDataAfterMalformedCsvAndRetry
 
-Ошибка разбора CSV откатывается и допускает повтор
+Ошибка разбора CSV сохраняет прежние данные и допускает повтор
 
 `alpha.business.insight.core.dataimport.CsvImportIntegrationTest$ImportFailures#givenMalformedCsv_whenImportFiles_thenThrowUncheckedIOExceptionAndAllowRetry`
 
 1. Импортировать базовые данные и сохранить состояние таблиц
-2. Передать незакрытую кавычку, проверить откат, восстановить файл и повторить импорт
+2. Передать незакрытую кавычку, проверить сохранность данных до записи, восстановить файл и повторить импорт
 
 **Ожидаемый результат:** Ожидается UncheckedIOException без частичных изменений; исправленный повтор завершается с исходным количеством платежей.
 
@@ -782,10 +761,10 @@ PDF, метаданные и vector payload распределяются по х
 
 `alpha.business.insight.core.migration.AnalysisSchemaIntegrationTest#givenAnalysisGraph_whenPersistAndReload_thenPreserveDataAndRelations`
 
-1. Сохранить event, insight, step, диалог, feedback и доступ пользователя к компании
+1. Сохранить event, insight с актуальным JSON-контрактом, диалог, feedback и доступ пользователя к компании
 2. Очистить persistence context и загрузить сущности повторно
 
-**Ожидаемый результат:** Ожидаются исходные JSONB, enum, связи, суммы и текстовые поля.
+**Ожидаемый результат:** Ожидаются исходные поля JSONB, enum, связи, суммы и текстовые поля; схема формы JSON здесь не валидируется.
 
 ### TestIntegrationEnforceInsightCacheVersion
 
@@ -958,7 +937,7 @@ Feign отклоняет строковую координату embedding
 
 `alpha.business.insight.core.event.EventApiIntegrationTest#givenAdmin_whenCreateEvent_thenPersistAndReturnReadableEvent`
 
-1. Отправить запрос от системного администратора для TEXT, URL и PDF.
+1. Отправить запрос от системного администратора для TEXT, URL и PDF с односимвольным Unicode-заголовком.
 2. Проверить поля ответа, начальный статус и версию материалов.
 3. Сверить запись PostgreSQL, Location и чтение события директором.
 
@@ -1097,9 +1076,9 @@ Feign отклоняет строковую координату embedding
 `alpha.business.insight.core.insight.InsightApiIntegrationTest#concurrentPostsShareOneGeneration`
 
 1. Параллельно отправить два POST для одной компании и события.
-2. Сравнить ответы и число сохранённых записей.
+2. Подтвердить две транзакции с ожиданием row lock, сравнить ответы и число сохранённых записей.
 
-**Ожидаемый результат:** Оба запроса возвращают один результат; сохраняется одна генерация.
+**Ожидаемый результат:** Оба запроса возвращают один результат; сохраняется одна генерация и выполняется один вызов стадии plan.
 
 ### TestIntegrationReturnMissingInsight
 
@@ -1184,6 +1163,39 @@ Feign отклоняет строковую координату embedding
 2. Проверить ответ и отсутствие записи; возобновить Qdrant и повторить.
 
 **Ожидаемый результат:** Возвращается 503 с QDRANT_UNAVAILABLE и retryable=true в пределах таймаута; запись не сохраняется, повтор успешен.
+
+### TestIntegrationSendOpenAiCompatibleJsonRequest
+
+Совместимый OpenAI запрос и JSON ответ
+
+`alpha.business.insight.core.insight.LlmClientHttpIntegrationTest#sendsOpenAiCompatibleRequestAndReadsJson`
+
+1. Поднять локальный HTTP-сервер и вызвать клиент с JSON-контекстом.
+2. Проверить путь, авторизацию, модель, лимит токенов, формат JSON и распарсенный ответ.
+
+**Ожидаемый результат:** Клиент отправляет совместимый запрос на /v1/chat/completions с заданными заголовками и параметрами и читает JSON-ответ.
+
+### TestIntegrationTimeoutLlmCallWithoutRetry
+
+Тайм-аут вызова LLM без повтора
+
+`alpha.business.insight.core.insight.LlmClientHttpIntegrationTest#stalledLlmCallTimesOutWithoutRetry`
+
+1. Запустить локальный сервер, который удерживает запрос дольше установленного тайм-аута.
+2. Проверить статус исключения, длительность и число запросов.
+
+**Ожидаемый результат:** Вызов завершается 503 до трёх секунд и не повторяется.
+
+### TestIntegrationHideProviderErrorAndAvoidRetry
+
+Скрытие ошибки провайдера без повтора
+
+`alpha.business.insight.core.insight.LlmClientHttpIntegrationTest#budgetErrorIsNotRetriedAndDoesNotExposeProviderBody`
+
+1. Ответить локального сервера HTTP 429 с секретным телом.
+2. Проверить статус, отсутствие секрета/ключа в исключении и число запросов.
+
+**Ожидаемый результат:** Клиент возвращает 503, не раскрывает тело провайдера или API-ключ и выполняет ровно один запрос.
 
 ### TestIntegrationFormatBusinessApiError
 
@@ -1295,6 +1307,19 @@ Feign отклоняет строковую координату embedding
 3. Скачать оригинал через API
 
 **Ожидаемый результат:** HTTP 201; исходный SHA-256 сохранён, значения 12,7% и 9,8% относятся к странице 2, скачанный PDF побайтно совпадает; embeddings явно stub-v1.
+
+### TestIntegrationPdfUploadSizeBoundaries
+
+HTTP-загрузка PDF на границах 50 МиБ
+
+`alpha.business.insight.core.qa.documents.integration.RealMlDocumentIntegrationTest#TestIntegrationPdfUploadSizeBoundaries`
+
+1. Восстановить корректный PDF заданного точного размера: 36 МиБ, 50 МиБ минус байт, ровно 50 МиБ, 50 МиБ плюс байт, 51 МиБ
+2. Получить JWT администратора и отправить настоящий HTTP multipart через backend и Python
+3. Для допустимого размера сверить размер и SHA-256 в API, PostgreSQL и файле; на точном лимите скачать оригинал
+4. Для превышения проверить 413, отсутствие новых или частичных файлов/строк и доступность API после отказа
+
+**Ожидаемый результат:** До 52 428 800 байт включительно возвращается 201, оригинал сохранён без изменений; превышение даёт 413 PAYLOAD_TOO_LARGE и retryable=false без побочных эффектов.
 
 ## E2E
 
