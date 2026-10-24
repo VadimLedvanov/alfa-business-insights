@@ -1,0 +1,10 @@
+# Legacy CSV integration tests use this profile and never call authenticated HTTP.
+# Supply the missing JWT configuration without replacing the decoder or disabling security.
+# Real HTTP E2E tests override both endpoints with their live Keycloak container.
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost/test-realm
+          jwk-set-uri: http://localhost/test-realm/certs

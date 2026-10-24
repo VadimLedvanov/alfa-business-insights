@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Подтверждённые дефекты backend",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s)^.*(?:user_company_access|string_embedding_contract).*$"
+  },
+  {
+    "name": "Нарушение проверяемого результата",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s)^(?!.*(?:user_company_access|string_embedding_contract)).*$"
+  },
+  {
+    "name": "Ошибки тестового окружения или выполнения",
+    "matchedStatuses": ["broken"]
+  }
+]
