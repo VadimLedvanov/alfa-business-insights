@@ -32,7 +32,6 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -187,11 +186,17 @@ class EventApiIntegrationTest {
                 """, first, second, third);
         mvc.perform(get("/api/events").contextPath("/api").with(role(role)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(3)))
-                .andExpect(jsonPath("$[0].id").value(third.toString()))
-                .andExpect(jsonPath("$[1].id").value(second.toString()))
-                .andExpect(jsonPath("$[2].id").value(first.toString()))
-                .andExpect(jsonPath("$[2].status").value("FAILED"));
+                .andExpect(jsonPath("$.content", hasSize(3)))
+                .andExpect(jsonPath("$.content[0].id").value(third.toString()))
+                .andExpect(jsonPath("$.content[1].id").value(second.toString()))
+                .andExpect(jsonPath("$.content[2].id").value(first.toString()))
+                .andExpect(jsonPath("$.content[2].status").value("FAILED"))
+                .andExpect(jsonPath("$.content[0].title").value("Новое PDF"))
+                .andExpect(jsonPath("$.content[0].sourceType").value("PDF"))
+                .andExpect(jsonPath("$.content[0].createdAt").exists())
+                .andExpect(jsonPath("$.content[0].sourceRef").doesNotExist())
+                .andExpect(jsonPath("$.content[0].materialsVersion").doesNotExist())
+                .andExpect(jsonPath("$.totalElements").value(3));
         mvc.perform(get("/api/events/" + second).contextPath("/api").with(role(role)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Новое"))
@@ -199,10 +204,77 @@ class EventApiIntegrationTest {
     }
 
     @Test
-    void givenNoEvents_whenList_thenReturnEmptyArray() throws Exception {
+    void givenNoEvents_whenList_thenReturnEmptyPage() throws Exception {
         mvc.perform(get("/api/events").contextPath("/api").with(role("COMPANY_DIRECTOR")))
                 .andExpect(status().isOk())
-                .andExpect(content().json("[]"));
+                .andExpect(jsonPath("$.content").isEmpty())
+                .andExpect(jsonPath("$.number").value(0))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @Test
+    void givenFiltersAndPage_whenList_thenCombineFiltersAndPreserveTotals() throws Exception {
+        insertListEvents();
+        mvc.perform(get("/api/events").contextPath("/api").with(role("COMPANY_DIRECTOR"))
+                        .param("title", "  rate  ").param("status", " READY ").param("sourceType", " TEXT ")
+                        .param("page", "1").param("size", "1").param("sort", "title,asc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].title").value("Rate B"))
+                .andExpect(jsonPath("$.number").value(1))
+                .andExpect(jsonPath("$.size").value(1))
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalPages").value(2));
+        mvc.perform(get("/api/events").contextPath("/api").with(role("SYSTEM_ADMIN"))
+                        .param("title", "rate").param("status", "READY").param("sourceType", "TEXT")
+                        .param("page", "5").param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty())
+                .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "\t"})
+    void givenBlankFilters_whenList_thenIgnoreFilters(String filter) throws Exception {
+        insertListEvents();
+        mvc.perform(get("/api/events").contextPath("/api").with(role("SYSTEM_ADMIN"))
+                        .param("title", filter).param("status", filter).param("sourceType", filter))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(5));
+    }
+
+    @Test
+    void givenWildcardCharacters_whenList_thenMatchLiteralTitle() throws Exception {
+        insertListEvents();
+        jdbc.update("""
+                INSERT INTO events (id, title, source_type, source_ref, status)
+                VALUES (?, 'Rate!%_special', 'TEXT', 'Текст', 'READY')
+                """, UUID.fromString("00000000-0000-0000-0000-000000000006"));
+        mvc.perform(get("/api/events").contextPath("/api").with(role("SYSTEM_ADMIN"))
+                        .param("title", "!%_"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].title").value("Rate!%_special"))
+                .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"status,UNKNOWN", "sourceType,OTHER"})
+    void givenInvalidFilter_whenList_thenBadRequest(String parameter, String value) throws Exception {
+        mvc.perform(get("/api/events").contextPath("/api").with(role("SYSTEM_ADMIN"))
+                        .param(parameter, value))
+                .andExpect(status().isBadRequest());
+    }
+
+    private void insertListEvents() {
+        jdbc.update("""
+                INSERT INTO events (id, title, source_type, source_ref, status)
+                VALUES ('00000000-0000-0000-0000-000000000001', 'Rate A', 'TEXT', 'Текст', 'READY'),
+                       ('00000000-0000-0000-0000-000000000002', 'Rate B', 'TEXT', 'Текст', 'READY'),
+                       ('00000000-0000-0000-0000-000000000003', 'Rate C', 'TEXT', 'Текст', 'FAILED'),
+                       ('00000000-0000-0000-0000-000000000004', 'Rate D', 'URL', 'url', 'READY'),
+                       ('00000000-0000-0000-0000-000000000005', 'Other', 'TEXT', 'Текст', 'READY')
+                """);
     }
 
     @Test
