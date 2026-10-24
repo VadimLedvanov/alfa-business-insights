@@ -9,6 +9,9 @@ import alpha.business.insight.core.service.DocumentService;
 import alpha.business.insight.core.service.DocumentStorage;
 import alpha.business.insight.core.service.DocumentVectorStore;
 import io.qdrant.client.QdrantClient;
+import feign.FeignException;
+import feign.Request;
+import feign.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -244,6 +247,28 @@ class DocumentUploadIntegrationTest {
         mvc.perform(multipart("/api/admin/documents").contextPath("/api").file(pdf())
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_SYSTEM_ADMIN"))))
                 .andExpect(status().is(fault.equals("exception") ? 503 : 502));
+        assertThat(documentCount()).isZero();
+        assertNoFiles();
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {422, 503})
+    void mlRejectsPdfOrIsUnavailable_thenReturnCorrectStatusAndCleanOriginal(int mlStatus) throws Exception {
+        var request = Request.create(Request.HttpMethod.POST, "http://ml/documents/test/analyze",
+                java.util.Map.of(), new byte[0], StandardCharsets.UTF_8, null);
+        var response = Response.builder().request(request).status(mlStatus)
+                .headers(java.util.Map.of()).body("{\"detail\":\"В PDF нет текста\"}", StandardCharsets.UTF_8).build();
+        when(analyzer.analyze(any(), any())).thenThrow(FeignException.errorStatus("analyze", response));
+
+        var result = mvc.perform(multipart("/api/admin/documents").contextPath("/api").file(pdf())
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_SYSTEM_ADMIN"))))
+                .andExpect(status().is(mlStatus))
+                .andExpect(jsonPath("$.retryable").value(mlStatus == 503));
+        if (mlStatus == 422) {
+            result.andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("извлечь текст")));
+        } else {
+            result.andExpect(jsonPath("$.code").value("ML_UNAVAILABLE"));
+        }
         assertThat(documentCount()).isZero();
         assertNoFiles();
     }
