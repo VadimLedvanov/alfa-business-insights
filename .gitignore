@@ -40,3 +40,12 @@ build/
 /backend/core/data/documents/
 
 .codegraph/
+
+# Python / ML
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+ml/data/
+ml/report.pdf
