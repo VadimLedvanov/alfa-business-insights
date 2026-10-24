@@ -1,0 +1,26 @@
+.feed-updated { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.feed-updated > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; color: var(--color-light-text-secondary); white-space: nowrap; }
+
+.feed-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.feed-filter {
+  height: 32px; padding: 0 13px; border: 0; border-radius: 8px;
+  background: var(--color-light-neutral-translucent-200); color: var(--color-light-text-primary);
+  font-size: 14px; line-height: 20px; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+.feed-filter:hover { background: var(--color-light-neutral-translucent-300); }
+.feed-filter--active { background: var(--color-light-accent-secondary); color: #fff; }
+.feed-filter--active:hover { background: var(--color-light-accent-secondary); }
+
+.feed-layout { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(255px, 1fr); gap: 20px; }
+.feed-list { display: flex; flex-direction: column; gap: 12px; }
+.feed-list .insight-tile { border-radius: 15px; padding: 21px 23px; }
+.feed-aside { display: flex; flex-direction: column; gap: 18px; }
+
+.note-card { background: var(--color-light-bg-tertiary); }
+.note-card__icon { width: 35px; height: 35px; border-radius: 10px; background: var(--color-light-bg-primary); display: grid; place-items: center; margin-bottom: 16px; }
+.note-card h3 { font-size: 15px; line-height: 20px; font-weight: 600; margin: 0 0 10px; }
+.note-card p { font-size: 13px; line-height: 20px; color: var(--color-light-text-secondary); margin: 0; }
+
+@media (max-width: 1100px) {
+  .feed-layout { grid-template-columns: 1fr; }
+}
