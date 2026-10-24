@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.cloud.openfeign.FeignAutoConfiguration;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DocumentAnalyzerFeignTest {
     private final ApplicationContextRunner context = new ApplicationContextRunner()
+            .withInitializer(new ConfigDataApplicationContextInitializer())
             .withConfiguration(AutoConfigurations.of(FeignAutoConfiguration.class,
                     HttpMessageConvertersAutoConfiguration.class))
             .withUserConfiguration(MlClientConfig.class, StubDocumentAnalyzer.class);
@@ -67,6 +69,73 @@ class DocumentAnalyzerFeignTest {
             assertThat(receivedType.get()).isEqualTo("application/pdf");
             assertThat(receivedPath.get()).isEqualTo("/documents/" + documentId + "/analyze");
         } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void feignCallsRemoteEmbeddingAndValidatesModel() throws Exception {
+        var received = new AtomicReference<String>();
+        var unavailable = new java.util.concurrent.atomic.AtomicBoolean();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/embeddings", exchange -> {
+            received.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            if (unavailable.get()) {
+                exchange.sendResponseHeaders(503, -1);
+                exchange.close();
+                return;
+            }
+            byte[] response = "{\"embeddingModel\":\"stub-v1\",\"embeddingDimension\":8,\"stub\":true,\"embedding\":[1,0.5,0.25,0.125,0,0,0,0]}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            try (var output = exchange.getResponseBody()) { output.write(response); }
+        });
+        server.start();
+        try {
+            context.withPropertyValues("ml.stub=false", "ml.url=http://127.0.0.1:" + server.getAddress().getPort())
+                    .run(application -> {
+                        DocumentAnalyzer analyzer = application.getBean(DocumentAnalyzer.class);
+                        assertThat(analyzer.embed("ставка")).containsExactly(1f, 0.5f, 0.25f, 0.125f, 0f, 0f, 0f, 0f);
+                        unavailable.set(true);
+                        assertThatThrownBy(() -> analyzer.embed("ставка")).isInstanceOf(FeignException.class);
+                        unavailable.set(false);
+                        assertThat(analyzer.embed("ставка")).containsExactly(1f, 0.5f, 0.25f, 0.125f, 0f, 0f, 0f, 0f);
+                    });
+            assertThat(JsonMapper.builder().build().readTree(received.get()).path("text").asString()).isEqualTo("ставка");
+        } finally { server.stop(0); }
+    }
+
+    @Test
+    void stalledMlCallTimesOutWithoutRetry() throws Exception {
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            calls.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            try {
+                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            context.withPropertyValues("ml.stub=false", "ml.url=http://127.0.0.1:" + server.getAddress().getPort(),
+                    "spring.cloud.openfeign.client.config.document-analyzer.readTimeout=100")
+                    .run(application -> {
+                        long started = System.nanoTime();
+                        assertThatThrownBy(() -> application.getBean(DocumentAnalyzer.class).embed("ставка"))
+                                .isInstanceOf(feign.RetryableException.class);
+                        assertThat(java.time.Duration.ofNanos(System.nanoTime() - started))
+                                .isLessThan(java.time.Duration.ofSeconds(3));
+                    });
+            assertThat(calls.get()).isEqualTo(1);
+        } finally {
+            release.countDown();
             server.stop(0);
         }
     }

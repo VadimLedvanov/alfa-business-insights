@@ -1,5 +1,7 @@
 package alpha.business.insight.core.config;
 
+import java.time.Duration;
+
 import io.qdrant.client.QdrantClient;
 import io.qdrant.client.QdrantGrpcClient;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,6 +15,6 @@ public class QdrantConfig {
     public QdrantClient qdrantClient(
             @Value("${qdrant.host}") String host,
             @Value("${qdrant.grpc-port}") int grpcPort) {
-        return new QdrantClient(QdrantGrpcClient.newBuilder(host, grpcPort, false).build());
+        return new QdrantClient(QdrantGrpcClient.newBuilder(host, grpcPort, false, false).withTimeout(Duration.ofSeconds(5)).build());
     }
 }

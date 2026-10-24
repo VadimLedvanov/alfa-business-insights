@@ -4,6 +4,7 @@ import alpha.business.insight.core.dto.InsightFragment;
 import alpha.business.insight.core.dto.EventReadDto;
 import alpha.business.insight.core.dto.CompanyContext;
 import alpha.business.insight.core.ml.DocumentAnalyzer;
+import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.ml.LlmClient;
 import alpha.business.insight.core.model.Event;
 import alpha.business.insight.core.model.EventSourceType;
@@ -101,8 +102,10 @@ public class InsightService {
             if (++queryCount > 3) { break; }
             List<Float> embedding;
             try { embedding = analyzer.embed(query.asString()); }
-            catch (RuntimeException exception) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "ML не вернула embedding для поиска");
+            catch (ResponseStatusException exception) {
+                throw exception;
+            } catch (RuntimeException exception) {
+                throw new ComponentUnavailableException("ML");
             }
             List<InsightFragment> found = vectors.search(embedding);
             List<KnowledgeDocument> metadata = documents.findAllById(found.stream().map(InsightFragment::documentId).distinct().toList());

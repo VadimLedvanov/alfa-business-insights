@@ -36,6 +36,7 @@ public class CompanyController {
     @Operation(summary = "Сгенерировать инсайт или получить сохранённый для текущей версии материалов",
             description = "Не более четырёх вызовов LLM. Повторный POST возвращает сохранённый результат.")
     @ApiResponse(responseCode = "200", description = "Инсайт по JSON-контракту")
+    @ApiResponse(responseCode = "503", description = "ML, LLM или Qdrant недоступен; запрос можно повторить")
     public Map<String, Object> generateInsight(@PathVariable String id, @PathVariable UUID eventId,
                                                Authentication user) {
         return insights.generate(id, eventId, user);

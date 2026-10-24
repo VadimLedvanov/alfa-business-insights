@@ -55,9 +55,15 @@ public class LlmClient {
                 действия, оценка банка, основания. При нехватке данных явно укажи ограничения.
                 trace_id и cost_rub назначает Java. Не добавляй источники вне переданных fragments.
                 """;
+        ChatResponse response;
         try {
-            ChatResponse response = chatModel.call(new Prompt(List.of(new SystemMessage(system + "\n" + instruction),
+            response = chatModel.call(new Prompt(List.of(new SystemMessage(system + "\n" + instruction),
                     new UserMessage(mapper.writeValueAsString(input)))));
+        } catch (RuntimeException exception) {
+            // Не раскрываем тело ошибки провайдера и не повторяем платный запрос автоматически.
+            throw new ComponentUnavailableException("LLM");
+        }
+        try {
             if (response == null || response.getResult() == null) {
                 throw new IllegalArgumentException("Пустой ответ LLM");
             }
@@ -69,7 +75,7 @@ public class LlmClient {
         } catch (RuntimeException exception) {
             // Тело ошибки провайдера может содержать служебные данные; не возвращаем и не журналируем его.
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "LLM недоступна, исчерпан бюджет или получен некорректный JSON");
+                    "LLM вернула некорректный ответ");
         }
     }
 

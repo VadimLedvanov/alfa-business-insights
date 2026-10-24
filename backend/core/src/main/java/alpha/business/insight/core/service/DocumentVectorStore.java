@@ -1,6 +1,7 @@
 package alpha.business.insight.core.service;
 
 import alpha.business.insight.core.ml.DocumentAnalysis;
+import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.dto.InsightFragment;
 import io.qdrant.client.grpc.Points.SearchPoints;
 import io.qdrant.client.grpc.Points.WithPayloadSelector;
@@ -68,6 +69,7 @@ public class DocumentVectorStore {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Для этой версии настроена только изолированная коллекция stub-v1");
         }
+        deadline = Math.min(deadline, System.nanoTime() + Duration.ofSeconds(5).toNanos());
         ensureCollection(deadline);
         List<PointStruct> points = analysis.chunks().stream().map(chunk -> {
             PointStruct.Builder point = PointStruct.newBuilder()
@@ -88,7 +90,7 @@ public class DocumentVectorStore {
         }).toList();
         UpdateResult result = await(client.upsertAsync(STUB_COLLECTION, points, remaining(deadline)), deadline);
         if (result.getStatus() != UpdateStatus.Completed) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Qdrant не подтвердил индексацию");
+            throw new ComponentUnavailableException("Qdrant");
         }
     }
 
@@ -105,7 +107,7 @@ public class DocumentVectorStore {
 
     /** Ищет до пяти фрагментов stub-v1; отсутствующая коллекция означает пустую базу знаний. */
     public List<InsightFragment> search(List<Float> embedding) {
-        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
         if (!await(client.collectionExistsAsync(STUB_COLLECTION, remaining(deadline)), deadline)) {
             return List.of();
         }
@@ -148,7 +150,7 @@ public class DocumentVectorStore {
         VectorParams params = await(client.getCollectionInfoAsync(STUB_COLLECTION, remaining(deadline)), deadline)
                 .getConfig().getParams().getVectorsConfig().getParams();
         if (params.getSize() != 8 || params.getDistance() != Distance.Cosine) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Несовместимая конфигурация коллекции Qdrant");
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Несовместимая конфигурация коллекции Qdrant");
         }
     }
 
@@ -159,14 +161,14 @@ public class DocumentVectorStore {
      * @throws ResponseStatusException если Qdrant не подтвердил очистку
      */
     public void delete(UUID documentId) {
-        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
         if (!await(client.collectionExistsAsync(STUB_COLLECTION, remaining(deadline)), deadline)) {
             return;
         }
         Filter filter = Filter.newBuilder().addMust(matchKeyword("documentId", documentId.toString())).build();
         UpdateResult result = await(client.deleteAsync(STUB_COLLECTION, filter, remaining(deadline)), deadline);
         if (result.getStatus() != UpdateStatus.Completed) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Qdrant не подтвердил очистку");
+            throw new ComponentUnavailableException("Qdrant");
         }
     }
 
@@ -176,7 +178,7 @@ public class DocumentVectorStore {
     private static Duration remaining(long deadline) {
         long nanos = deadline - System.nanoTime();
         if (nanos <= 0) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Истекло время обращения к Qdrant");
+            throw new ComponentUnavailableException("Qdrant");
         }
         return Duration.ofNanos(nanos);
     }
@@ -190,10 +192,10 @@ public class DocumentVectorStore {
         } catch (InterruptedException exception) {
             future.cancel(true);
             Thread.currentThread().interrupt();
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Обращение к Qdrant прервано", exception);
+            throw new ComponentUnavailableException("Qdrant");
         } catch (ExecutionException | TimeoutException exception) {
             future.cancel(true);
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Qdrant недоступен", exception);
+            throw new ComponentUnavailableException("Qdrant");
         } finally {
             if (!future.isDone()) {
                 future.cancel(true);

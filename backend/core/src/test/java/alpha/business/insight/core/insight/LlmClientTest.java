@@ -35,8 +35,8 @@ class LlmClientTest {
             .withUserConfiguration(LlmClient.class);
 
     @Test
-    void defaultConfigurationUsesStubWithoutCreatingRemoteModel() {
-        context.run(application -> {
+    void disabledChatUsesStubWithoutCreatingRemoteModel() {
+        context.withPropertyValues("spring.ai.model.chat=none").run(application -> {
             assertThat(application).doesNotHaveBean(OpenAiChatModel.class);
             ObjectNode result = application.getBean(LlmClient.class).complete("draft", mapper.createObjectNode());
             assertThat(result.path("missing_data").toString()).contains("LLM STUB");
@@ -95,6 +95,43 @@ class LlmClientTest {
     }
 
     @Test
+    void stalledLlmCallTimesOutWithoutRetry() throws Exception {
+        var release = new java.util.concurrent.CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            calls.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            try {
+                release.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            context.withPropertyValues("spring.ai.model.chat=openai", "spring.ai.openai.api-key=test-key",
+                    "spring.ai.openai.timeout=100ms",
+                    "spring.ai.openai.base-url=http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
+                    .run(application -> {
+                        long started = System.nanoTime();
+                        assertThatThrownBy(() -> application.getBean(LlmClient.class)
+                                .complete("plan", mapper.createObjectNode()))
+                                .isInstanceOfSatisfying(ResponseStatusException.class,
+                                        error -> assertThat(error.getStatusCode().value()).isEqualTo(503));
+                        assertThat(java.time.Duration.ofNanos(System.nanoTime() - started))
+                                .isLessThan(java.time.Duration.ofSeconds(3));
+                    });
+            assertThat(calls.get()).isEqualTo(1);
+        } finally {
+            release.countDown();
+            server.stop(0);
+        }
+    }
+
+    @Test
     void budgetErrorIsNotRetriedAndDoesNotExposeProviderBody() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -112,7 +149,9 @@ class LlmClientTest {
                     .run(application -> assertThatThrownBy(() -> application.getBean(LlmClient.class)
                             .complete("plan", mapper.createObjectNode()))
                             .isInstanceOf(ResponseStatusException.class)
-                            .hasMessageNotContaining("secret-provider-details").hasMessageNotContaining("test-key"));
+                            .hasMessageNotContaining("secret-provider-details").hasMessageNotContaining("test-key")
+                            .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode().value())
+                                    .isEqualTo(503)));
             assertThat(calls.get()).isEqualTo(1);
         } finally { server.stop(0); }
     }
