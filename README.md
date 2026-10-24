@@ -52,6 +52,17 @@
 docker compose -f infrastructure/docker-compose.yaml up -d --build
 ```
 
+После запуска сервисы доступны через nginx:
+
+| Сервис | Адрес |
+| --- | --- |
+| Frontend | [http://localhost](http://localhost) |
+| Backend API | [http://localhost/api](http://localhost/api) |
+| Keycloak | [http://localhost/auth](http://localhost/auth) |
+| OpenAPI / Swagger UI | [http://localhost/api/swagger-ui.html](http://localhost/api/swagger-ui.html) |
+
+Сейчас frontend отдаёт стартовую заглушку; интерфейс приложения ещё разрабатывается.
+
 Остановить и удалить данные:
 
 ```bash
@@ -64,6 +75,7 @@ docker compose -f infrastructure/docker-compose.yaml down -v
 
 ```mermaid
 flowchart LR
+    NG[Nginx<br/>localhost:80<br/>/, /api, /auth]
     FE[Frontend<br/>Радар · лента · разбор · карта влияния]
     KC[Keycloak<br/>OIDC / PKCE, JWT]
     BE[Java Backend · Spring Boot<br/>Profiler · Matcher · Interpreter<br/>проверка ссылок · критик · кэш · журнал]
@@ -74,6 +86,9 @@ flowchart LR
     QD[(Qdrant<br/>чанки PDF + векторы)]
     FS[(Файлы<br/>оригиналы PDF)]
 
+    NG -->|/| FE
+    NG -->|/api| BE
+    NG -->|/auth| KC
     FE -->|вход| KC
     FE -->|API + JWT| BE
     BE -->|JWKS| KC
@@ -126,7 +141,7 @@ flowchart LR
 
 | | Возможность |
 | --- | --- |
-| ✅ | Docker Compose: PostgreSQL, Keycloak, Qdrant, backend с healthchecks |
+| ✅ | Docker Compose: nginx, frontend, backend, ML, PostgreSQL, Keycloak и Qdrant с healthchecks |
 | ✅ | Вход через Keycloak, проверка JWT, роли, тестовые пользователи |
 | ✅ | Импорт трёх CSV кейса при старте |
 | ✅ | Контекст компании: профиль, группа, топ-контрагенты, концентрация платежей |
@@ -157,4 +172,6 @@ flowchart LR
 
 - [Vision and Scope](doc/visionandscope.md): бизнес-контекст, возможности, архитектура, границы MVP, критерии кейса.
 - [Инструкция ML-разработчику](ml/ml-document-contract.md): контракт PDF → чанки, подключение к backend, критерии приёмки.
-- [OpenAPI / Swagger UI](http://localhost:8080/api/swagger-ui.html) (после запуска стенда).
+- [Frontend](http://localhost) (после запуска стенда).
+- [OpenAPI / Swagger UI](http://localhost/api/swagger-ui.html) (после запуска стенда).
+- [Keycloak](http://localhost/auth) (после запуска стенда).

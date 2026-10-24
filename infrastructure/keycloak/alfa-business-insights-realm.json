@@ -24,12 +24,11 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "redirectUris": [
-        "http://localhost:3000/*",
-        "http://localhost:8080/api/swagger-ui/oauth2-redirect.html"
+        "http://localhost/*",
+        "http://localhost/api/swagger-ui/oauth2-redirect.html"
       ],
       "webOrigins": [
-        "http://localhost:3000",
-        "http://localhost:8080"
+        "http://localhost"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256"
