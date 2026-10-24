@@ -59,6 +59,7 @@ docker compose -f infrastructure/docker-compose.yaml up -d --build
 | Frontend | [http://localhost](http://localhost) |
 | Backend API | [http://localhost/api](http://localhost/api) |
 | Keycloak | [http://localhost/auth](http://localhost/auth) |
+| Qdrant Dashboard | [http://localhost/qdrant/dashboard](http://localhost/qdrant/dashboard) |
 | OpenAPI / Swagger UI | [http://localhost/api/swagger-ui.html](http://localhost/api/swagger-ui.html) |
 
 Сейчас frontend отдаёт стартовую заглушку; интерфейс приложения ещё разрабатывается.
@@ -89,6 +90,7 @@ flowchart LR
     NG -->|/| FE
     NG -->|/api| BE
     NG -->|/auth| KC
+    NG -->|/qdrant| QD
     FE -->|вход| KC
     FE -->|API + JWT| BE
     BE -->|JWKS| KC
