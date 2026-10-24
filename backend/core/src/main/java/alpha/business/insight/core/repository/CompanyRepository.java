@@ -1,7 +1,10 @@
 package alpha.business.insight.core.repository;
 
 import alpha.business.insight.core.dto.GroupCompany;
+import alpha.business.insight.core.dto.CompanyListItem;
 import alpha.business.insight.core.model.Company;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -9,6 +12,19 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface CompanyRepository extends JpaRepository<Company, String> {
+    @Query("""
+            SELECT new alpha.business.insight.core.dto.CompanyListItem(
+                c.id, c.profileStatus, c.mainIndustryCode, c.mainIndustryName, c.city, c.region)
+            FROM Company c
+            WHERE (:companyId IS NULL OR LOWER(c.id) LIKE LOWER(CONCAT('%', CAST(:companyId AS String), '%')) ESCAPE '!')
+              AND (:city IS NULL OR LOWER(c.city) = LOWER(CAST(:city AS String)))
+              AND (:mainIndustryCode IS NULL OR c.mainIndustryCode = :mainIndustryCode)
+            """)
+    Page<CompanyListItem> findCompanies(@Param("companyId") String companyId,
+                                      @Param("city") String city,
+                                      @Param("mainIndustryCode") String mainIndustryCode,
+                                      Pageable pageable);
+
     /**
      * Возвращает все компании указанной группы с их отраслями, по возрастанию идентификатора.
      */
