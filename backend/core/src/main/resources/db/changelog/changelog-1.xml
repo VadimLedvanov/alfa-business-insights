@@ -263,13 +263,13 @@
 
     <changeSet id="20261023-knowledge-documents" author="v.ledvanov">
         <comment>База знаний PDF, связи фрагментов и компенсационная очистка загрузок.</comment>
-        <sql><![CDATA[
+        <sql>
             CREATE TABLE documents (
                 id UUID PRIMARY KEY,
                 title TEXT NOT NULL,
                 file_name TEXT NOT NULL,
                 file_path TEXT NOT NULL UNIQUE,
-                size_bytes BIGINT NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 20971520),
+                size_bytes BIGINT NOT NULL CHECK (size_bytes > 0 AND size_bytes &lt;= 20971520),
                 sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
                 uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 publication_date DATE,
@@ -331,7 +331,7 @@
             COMMENT ON TABLE fragments IS 'Фрагмент материала события или документа базы знаний.';
             COMMENT ON TABLE facts IS 'Факт или позиция банка со ссылкой на подтверждающий фрагмент.';
             COMMENT ON COLUMN fragments.ordinal IS 'Порядковый номер фрагмента внутри материала, начиная с нуля.';
-        ]]></sql>
+        </sql>
     </changeSet>
 
     <changeSet id="20261023-pdf-chunks-in-qdrant" author="v.ledvanov">
@@ -348,6 +348,14 @@
             DROP TABLE facts;
             DROP TABLE fragments;
             DROP TABLE document_upload_cleanup;
+        </sql>
+    </changeSet>
+    <changeSet id="20261024-pdf-size-50mb" author="v.ledvanov">
+        <comment>Увеличение максимального размера PDF до 50 МБ.</comment>
+        <sql>
+            ALTER TABLE documents DROP CONSTRAINT documents_size_bytes_check;
+            ALTER TABLE documents ADD CONSTRAINT documents_size_bytes_check
+                CHECK (size_bytes > 0 AND size_bytes &lt;= 52428800);
         </sql>
     </changeSet>
 </databaseChangeLog>
