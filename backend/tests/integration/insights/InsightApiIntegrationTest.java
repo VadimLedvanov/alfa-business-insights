@@ -202,7 +202,10 @@ class InsightApiIntegrationTest {
         doAnswer(
                         invocation -> {
                             if (firstPlan.compareAndSet(true, false)) {
-                                awaitConcurrentTransaction();
+                                int holderPid =
+                                        jdbc.queryForObject(
+                                                "SELECT pg_backend_pid()", Integer.class);
+                                awaitConcurrentTransaction(holderPid);
                             }
                             return invocation.callRealMethod();
                         })
@@ -216,14 +219,20 @@ class InsightApiIntegrationTest {
                     executor.submit(
                             () -> {
                                 requestsReady.countDown();
-                                startRequests.await();
+                                if (!startRequests.await(10, TimeUnit.SECONDS)) {
+                                    throw new AssertionError(
+                                            "Параллельный старт запросов не открыт");
+                                }
                                 return generateWithAllureContext(testCaseUuid);
                             });
             Future<JsonNode> second =
                     executor.submit(
                             () -> {
                                 requestsReady.countDown();
-                                startRequests.await();
+                                if (!startRequests.await(10, TimeUnit.SECONDS)) {
+                                    throw new AssertionError(
+                                            "Параллельный старт запросов не открыт");
+                                }
                                 return generateWithAllureContext(testCaseUuid);
                             });
             boolean bothReady = requestsReady.await(10, TimeUnit.SECONDS);
@@ -232,7 +241,11 @@ class InsightApiIntegrationTest {
             JsonNode firstResult = first.get(10, TimeUnit.SECONDS);
             assertThat(second.get(10, TimeUnit.SECONDS)).isEqualTo(firstResult);
         } finally {
+            startRequests.countDown();
             executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS))
+                    .as("завершение параллельных запросов")
+                    .isTrue();
         }
         // Проверки: оба ответа совпадают, а инсайт и вызов планирования созданы один раз.
         assertThat(
@@ -245,7 +258,7 @@ class InsightApiIntegrationTest {
     }
 
     /** Дожидается второй транзакции, заблокированной на строке события. */
-    private void awaitConcurrentTransaction() throws InterruptedException {
+    private void awaitConcurrentTransaction(int holderPid) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         int lockWaiters = 0;
         while (System.nanoTime() < deadline) {
@@ -253,9 +266,14 @@ class InsightApiIntegrationTest {
                     jdbc.queryForObject(
                             """
                     SELECT count(*) FROM pg_stat_activity
-                    WHERE datname = current_database() AND wait_event_type = 'Lock'
+                    WHERE datname = current_database()
+                      AND pid <> ?
+                      AND wait_event_type = 'Lock'
+                      AND ? = ANY(pg_blocking_pids(pid))
                     """,
-                            Integer.class);
+                            Integer.class,
+                            holderPid,
+                            holderPid);
             if (lockWaiters > 0) return;
             Thread.sleep(25);
         }

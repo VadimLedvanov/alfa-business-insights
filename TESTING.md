@@ -63,4 +63,5 @@ Java и pytest можно запускать одновременно после
 - [Структура, теги и раннеры](backend/tests/README.md).
 - [Тест-планы: шаги и ожидаемые результаты](backend/tests/reports/catalog.md).
 - [Матрица проверок](backend/tests/reports/plan.md).
+- [План проверок issue #58: события и признаки компаний](backend/tests/reports/issue58-plan.md).
 - [Известные дефекты](backend/tests/reports/findings.md): регрессии остаются включёнными.

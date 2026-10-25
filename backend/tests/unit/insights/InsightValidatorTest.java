@@ -383,7 +383,7 @@ class InsightValidatorTest {
                 .isEqualTo(1);
     }
 
-    /** Создаёт пустой JSON-ответ со всеми обязательными массивами контракта. */
+    /** Создаёт валидный пустой ответ с обязательными массивами и полями значимости. */
     private ObjectNode empty() {
         ObjectNode result = mapper.createObjectNode();
         for (String field :
@@ -400,6 +400,8 @@ class InsightValidatorTest {
                         "sources")) {
             result.putArray(field);
         }
+        result.put("significance", "UNKNOWN");
+        result.put("significanceReason", "Недостаточно данных для оценки значимости.");
         return result;
     }
 }

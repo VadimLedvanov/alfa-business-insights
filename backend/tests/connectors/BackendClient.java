@@ -66,11 +66,19 @@ public final class BackendClient {
 
     /** Загружает синтетический PDF через multipart-поля, сформированные Rest Assured. */
     public Response postMultipart(String path, SyntheticPdf.MultipartUpload upload, String bearer) {
+        return postMultipart(path, upload, bearer, "E2E synthetic report");
+    }
+
+    /** Загружает синтетический PDF с заданным названием и multipart-полями. */
+    public Response postMultipart(
+            String path, SyntheticPdf.MultipartUpload upload, String bearer, String title) {
         URI uri = URI.create(baseUri + path);
         Map<String, String> headers =
                 bearer == null ? Map.of() : Map.of("Authorization", "Bearer " + bearer);
         String bodyDescription =
-                "Query parameters: title=E2E synthetic report, publicationDate="
+                "Query parameters: title="
+                        + title
+                        + ", publicationDate="
                         + upload.publicationDate()
                         + "\n"
                         + upload.description()
@@ -92,7 +100,7 @@ public final class BackendClient {
                             "Исходный PDF-файл запроса", "application/pdf", upload.pdf(), ".pdf");
                     RequestSpecification request =
                             request(uri, headers)
-                                    .queryParam("title", "E2E synthetic report")
+                                    .queryParam("title", title)
                                     .queryParam("publicationDate", upload.publicationDate())
                                     .multiPart("publicationDate", upload.publicationDate())
                                     .multiPart(

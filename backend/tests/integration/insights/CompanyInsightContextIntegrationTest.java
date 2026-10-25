@@ -153,6 +153,13 @@ class CompanyInsightContextIntegrationTest {
     @AfterEach
     void removeFixture() {
         jdbc.update(
+                "DELETE FROM dialog_messages WHERE insight_id IN "
+                        + "(SELECT id FROM insights WHERE event_id=? AND company_id IN (?, ?, ?))",
+                event,
+                COMPANY_A,
+                COMPANY_B,
+                COMPANY_C);
+        jdbc.update(
                 "DELETE FROM insights WHERE event_id=? AND company_id IN (?, ?, ?)",
                 event,
                 COMPANY_A,
@@ -271,11 +278,11 @@ class CompanyInsightContextIntegrationTest {
                                                 .extract()
                                                 .response()
                                                 .asString());
-                        assertThat(cached.path("id").asString())
+                        assertThat(cached)
                                 .as(
-                                        "GET-кэш для company=%s event=%s; ответ=%s",
+                                        "GET-кэш совпадает с POST для company=%s event=%s; ответ=%s",
                                         company, event, cached)
-                                .isEqualTo(generated.path("id").asString());
+                                .isEqualTo(generated);
                     }
                 });
     }

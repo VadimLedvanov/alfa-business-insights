@@ -1,6 +1,6 @@
 # Каталог тестов и проверок
 
-Названия, шаги и ожидаемые результаты соответствуют планам Allure. Параметризованный сценарий создаёт несколько запусков. Фактически исполненные шаги и HTTP-вложения доступны в отчёте.
+Названия и планы Allure берутся из `resources/test-names.yaml` и `resources/test-plans.yaml`; этот каталог — производное представление этих файлов. При изменении YAML каталог пересобирается одноразовым преобразованием записей (заголовок, шаги, ожидаемый результат), без постоянного генератора. Параметризованный сценарий создаёт несколько запусков. Фактически исполненные шаги и HTTP-вложения доступны в отчёте.
 
 ## Unit
 
@@ -40,14 +40,14 @@
 
 ### TestUnitCleanupAfterAnalyzerFailure
 
-Ошибка анализатора очищает PDF и становится 502
+Недоступность ML возвращает 503 и очищает PDF
 
 `alpha.business.insight.core.qa.documents.unit.DocumentServiceTest#TestUnitCleanupAfterAnalyzerFailure`
 
 1. Смоделировать исключение анализатора и загрузить PDF
 2. Проверить статус ошибки и отсутствие артефактов
 
-**Ожидаемый результат:** Ожидается BAD_GATEWAY, удалённый оригинал и отсутствие записи и вызова удаления Qdrant.
+**Ожидаемый результат:** Ожидается SERVICE_UNAVAILABLE, удалённый оригинал и отсутствие записи и вызова удаления Qdrant.
 
 ### TestUnitCleanupAfterVectorFailure
 
@@ -93,17 +93,6 @@
 
 **Ожидаемый результат:** Клиент остаётся stub и не создаёт удалённую модель.
 
-### TestUnitFilterUnsupportedFactsAndBankView
-
-Проверка привязки фактов и позиции банка по смешанным источникам
-
-`alpha.business.insight.core.insight.InsightValidatorTest#removesUnretrievedFactsAndBankViewFromNonBankSources`
-
-1. Передать подтверждённый и неподтверждённые факты; для bank_view указать обычный EVENT_TEXT, синтетический BANK_ANALYTICS stub и реальный BANK_ANALYTICS фрагмент.
-2. Проверить факты, единственную допустимую позицию банка, точную причину отклонения и идентификаторы источников.
-
-**Ожидаемый результат:** Остаётся только подтверждённый факт и позиция по реальному материалу банка; позиции по обычному и синтетическому материалам удалены, непроверенная ссылка исключена из источников.
-
 ### TestUnitDemotesUnreferencedFactToLowConfidenceInference
 
 Неподтверждённый факт преобразуется в вывод с низкой уверенностью
@@ -114,6 +103,17 @@
 2. Проверить facts, ai_inference, confidence, based_on и сохранность исходного вывода.
 
 **Ожидаемый результат:** Неподтверждённый текст отсутствует в facts и ровно один раз добавлен в ai_inference с confidence=low и пустым based_on; подтверждённый факт и существующий вывод сохранены.
+
+### TestUnitFilterUnsupportedFactsAndBankView
+
+Проверка привязки фактов и позиции банка
+
+`alpha.business.insight.core.insight.InsightValidatorTest#removesUnretrievedFactsAndBankViewFromNonBankSources`
+
+1. Передать подтверждённый и неподтверждённые факты и позицию банка по не банковскому источнику.
+2. Проверить оставшиеся записи, ссылки и missing_data.
+
+**Ожидаемый результат:** Остаётся только подтверждённый факт; позиция банка удалена, выдуманный источник исключён, причина удаления указана.
 
 ### TestUnitIgnoresAbsentCompanyListFilters
 
@@ -126,6 +126,17 @@
 
 **Ожидаемый результат:** Репозиторий вызывается с null-фильтрами, сервис возвращает тот же объект страницы.
 
+### TestUnitNameE5CollectionByModelAndDimension
+
+Имя коллекции включает модель и размерность
+
+`alpha.business.insight.core.qa.documents.DocumentVectorStoreCollectionTest#multilingualE5UsesItsOwn384DimensionCollection`
+
+1. Указать multilingual-e5-small размерности 384.
+2. Получить имя коллекции Qdrant.
+
+**Ожидаемый результат:** Имя коллекции соответствует модели и размерности, чтобы несовместимые векторы не пересекались.
+
 ### TestUnitNormalizeInferenceGrounding
 
 Фильтрация stub-фактов и обоснования выводов
@@ -136,6 +147,29 @@
 2. Проверить факты, based_on, confidence, missing_data и cost.
 
 **Ожидаемый результат:** Stub-факт удалён; неподтверждённое обоснование очищено, confidence понижен до low; missing_data и cost сохранены.
+
+### TestUnitPreserveLegacyStubCollectionName
+
+Имя коллекции stub сохраняет совместимость
+
+`alpha.business.insight.core.qa.documents.DocumentVectorStoreCollectionTest#stubCollectionNameRemainsStableForExistingDocuments`
+
+1. Указать stub-v1 размерности 8.
+2. Получить имя коллекции Qdrant.
+
+**Ожидаемый результат:** Возвращается прежнее имя knowledge_documents_stub_v1.
+
+### TestUnitPreserveEncodedAndRepeatedQueryParameters
+
+HTTP-клиент сохраняет закодированные и повторяющиеся параметры запроса
+
+`alpha.business.insight.core.qa.connectors.HttpEvidenceTest#TestUnitPreserveEncodedAndRepeatedQueryParameters`
+
+1. Запустить локальный HTTP-приёмник query.
+2. Отправить GET с закодированными значениями и повторным параметром.
+3. Проверить фактический путь, исходную query-строку и декодированные значения.
+
+**Ожидаемый результат:** Путь равен `/api/events`; пробелы, амперсанд, плюс и процент восстанавливаются, оба значения `sourceType` сохраняются. Запрос идёт только на локальный loopback-приёмник.
 
 ### TestUnitPreserveSafeHttpEvidence
 
@@ -456,6 +490,7 @@ BOM и разделитель внутри кавычек сохраняют з�
 
 **Ожидаемый результат:** Ожидается имя файла и название document.pdf.
 
+
 ## Integration
 
 ### TestIntegrationAllowAdminInsightGeneration
@@ -590,6 +625,17 @@ BOM и разделитель внутри кавычек сохраняют з�
 
 **Ожидаемый результат:** Ожидается 403.
 
+### TestIntegrationDenyDirectorPdfList
+
+Список PDF доступен только системному администратору
+
+`alpha.business.insight.core.qa.documents.DocumentListControllerTest#listRejectsCompanyDirector`
+
+1. Подготовить JWT роли COMPANY_DIRECTOR
+2. Запросить административный список PDF
+
+**Ожидаемый результат:** Ожидается HTTP 403.
+
 ### TestIntegrationDocumentDatabaseSchemaComments
 
 Таблицы и колонки прикладной схемы документированы
@@ -611,6 +657,17 @@ OpenAPI публикует безопасную схему метаданных
 2. Проверить описания размера, SHA-256, количества чанков и отсутствие внутренних полей
 
 **Ожидаемый результат:** Ожидаются публичные поля контракта и документированное название загрузки.
+
+### TestIntegrationDocumentPdfListOpenApi
+
+Swagger описывает список PDF и параметры страниц
+
+`alpha.business.insight.core.qa.documents.DocumentListControllerTest#openApiDescribesDocumentListAndPagination`
+
+1. Инициализировать Spring MVC и OpenAPI
+2. Получить публичную спецификацию и проверить GET /admin/documents
+
+**Ожидаемый результат:** Ожидаются ответ 200 и параметры page, size, sort.
 
 ### TestIntegrationDocumentsOpenApiContract
 
@@ -697,7 +754,7 @@ OpenAPI описывает API контекста компании
 1. Вызвать обработчик ошибки загрузки свыше лимита.
 2. Проверить статус, код, сообщение и retryable.
 
-**Ожидаемый результат:** Ответ 413 содержит PAYLOAD_TOO_LARGE, русское сообщение о лимите 20 МБ и retryable=false.
+**Ожидаемый результат:** Ответ 413 содержит PAYLOAD_TOO_LARGE, русское сообщение о лимите 50 МБ и retryable=false.
 
 ### TestIntegrationHideProviderErrorAndAvoidRetry
 
@@ -728,9 +785,9 @@ OpenAPI описывает API контекста компании
 `alpha.business.insight.core.event.EventApiIntegrationTest#givenBlankFilters_whenList_thenIgnoreFilters`
 
 1. Передать пустую строку, пробел или табуляцию в title, status и sourceType.
-2. Проверить общее число результатов.
+2. Сравнить полный ответ с непрофильтрованным запросом и количеством событий в БД.
 
-**Ожидаемый результат:** Пустые фильтры игнорируются; возвращаются все пять событий.
+**Ожидаемый результат:** Пустые фильтры игнорируются; Page совпадает с непрофильтрованным ответом, totalElements равен числу сохранённых событий.
 
 ### TestIntegrationIgnoreClientEventMetadata
 
@@ -805,10 +862,32 @@ OpenAPI описывает API контекста компании
 
 `alpha.business.insight.core.event.EventApiIntegrationTest#givenEvents_whenListAndRead_thenReturnNewestFirstWithStableOrder`
 
-1. Создать события с разными датами и одинаковой датой.
-2. Запросить первую страницу списка, затем прочитать конкретное событие от имени администратора и директора.
+1. Создать три события с уникальным общим префиксом заголовка, разными датами и одинаковой датой.
+2. Запросить страницу по префиксу, затем прочитать конкретное событие от имени администратора и директора.
 
-**Ожидаемый результат:** Page содержит три элемента с totalElements=3, отсортированных по createdAt убыванию и затем id убыванию; компактный список не раскрывает sourceRef и materialsVersion, детальное чтение возвращает сохранённые поля.
+**Ожидаемый результат:** Page содержит ровно три совпавших события с totalElements=3, отсортированных по createdAt убыванию и затем id убыванию; компактный список не раскрывает sourceRef и materialsVersion, детальное чтение возвращает сохранённые поля.
+
+### TestIntegrationListPdfDocumentsByNewestFirst
+
+Список PDF по умолчанию начинается с новых документов
+
+`alpha.business.insight.core.qa.documents.DocumentListControllerTest#listDefaultsToNewestDocumentsFirst`
+
+1. Настроить пустую первую страницу репозитория с размером 20 и сортировкой uploadedAt и id по убыванию
+2. Запросить список документов от имени администратора
+
+**Ожидаемый результат:** Ожидаются пустая страница с индексом 0, размером 20 и нулём элементов.
+
+### TestIntegrationMapMlUnavailableTo503AndCleanup
+
+Недоступность ML отменяет загрузку с возможностью повтора
+
+`alpha.business.insight.core.document.DocumentUploadIntegrationTest#mlUnavailableReturns503AndCleansArtifacts`
+
+1. Смоделировать сбой вызова ML и загрузить PDF с JWT администратора
+2. Проверить HTTP-статус, retryable и побочные эффекты
+
+**Ожидаемый результат:** Ожидаются 503, ML_UNAVAILABLE, retryable=true, отсутствие метаданных и очищенный файловый оригинал.
 
 ### TestIntegrationMatchEventTitleWildcardsLiterally
 
@@ -831,6 +910,17 @@ OpenAPI описывает API контекста компании
 2. Получить контекст и проверить порядок и доли
 
 **Ожидаемый результат:** Ожидается стабильная сортировка, null для долей и признак paymentShares без деления на ноль.
+
+### TestIntegrationPaginatePdfDocumentMetadata
+
+Список PDF поддерживает страницы и безопасные метаданные
+
+`alpha.business.insight.core.qa.documents.DocumentListControllerTest#listReturnsRequestedPageAndPublicMetadata`
+
+1. Подготовить документ с внутренним путём в JPA-сущности и вторую страницу размера 2
+2. Запросить список с сортировкой title по возрастанию
+
+**Ожидаемый результат:** Ожидаются параметры страницы и публичные поля метаданных; filePath не возвращается.
 
 ### TestIntegrationPdfUploadSizeBoundaries
 
@@ -1069,7 +1159,7 @@ JWT с ошибкой декодирования отклоняется
 
 `alpha.business.insight.core.document.DocumentUploadIntegrationTest#invalidMlResponseCancelsUpload`
 
-1. Для каждого fault-сценария вернуть неверный ID, ordinal, размерность, NaN, пустой список или исключение
+1. Для каждого fault-сценария вернуть неверный ID, ordinal, размерность, NaN или пустой список
 2. Проверить HTTP ответ и побочные эффекты
 
 **Ожидаемый результат:** Ожидаются 502, отсутствие метаданных и очищенный файловый оригинал.
@@ -1080,7 +1170,7 @@ JWT с ошибкой декодирования отклоняется
 
 `alpha.business.insight.core.document.DocumentUploadIntegrationTest#rejectsEmptyNonPdfAndOversizedFileBeforeCreatingArtifacts`
 
-1. Загрузить файлы размером 0, 3 байта и свыше 20 МБ
+1. Загрузить файлы размером 0, 3 байта и свыше 50 МБ
 2. Проверить статусы, записи и файлы
 
 **Ожидаемый результат:** Ожидаются 400, 415 и 413 без созданных артефактов.
@@ -1215,6 +1305,17 @@ JWT без разрешённой роли запрещён
 
 **Ожидаемый результат:** Все закрытые endpoints возвращают 401.
 
+### TestIntegrationRequireAuthenticationForPdfList
+
+Список PDF требует входа
+
+`alpha.business.insight.core.qa.documents.DocumentListControllerTest#listRequiresAuthentication`
+
+1. Подготовить анонимный запрос
+2. Запросить административный список PDF
+
+**Ожидаемый результат:** Ожидается HTTP 401.
+
 ### TestIntegrationRequireJwt
 
 Защищённые маршруты требуют JWT
@@ -1259,13 +1360,13 @@ JWT без разрешённой роли запрещён
 
 **Ожидаемый результат:** Возвращается 503 с QDRANT_UNAVAILABLE и retryable=true в пределах таймаута; запись не сохраняется, повтор успешен.
 
-### TestIntegrationReturnEmptyEventList
+### TestIntegrationReturnsEmptyFilteredEventPage
 
-Пустая страница событий
+Пустая страница для фильтра без совпадений
 
 `alpha.business.insight.core.event.EventApiIntegrationTest#givenNoEvents_whenList_thenReturnEmptyArray`
 
-1. Запросить список от имени директора при отсутствии событий.
+1. Запросить список от имени директора с title, для которого нет совпадений.
 2. Проверить содержимое и метаданные Page.
 
 **Ожидаемый результат:** HTTP 200; content пуст, number=0, size=20 и totalElements=0.
@@ -1454,6 +1555,7 @@ Feign отправляет PDF и декодирует результат ана
 
 **Ожидаемый результат:** Синтетические/неподтверждённые факты и позиция банка удалены; ссылки на источники содержат метаданные, исходный текст фрагмента не попадает в сохранённый payload.
 
+
 ### TestIntegrationInsightReceivesSelectedCompanyContextAndIsolatesCache
 
 Контекст выбранной компании передаётся в инсайт
@@ -1463,7 +1565,7 @@ Feign отправляет PDF и декодирует результат ана
 1. Подготовить три компании одной группы с разными профилями и направлениями платежей для общего события.
 2. Сгенерировать инсайты через integration pipeline и сверить вход LLM, записи и повторный GET.
 
-**Ожидаемый результат:** Каждый инсайт получает контекст выбранной компании и общую группу; для трёх компаний сохраняются независимые записи и кэш.
+**Ожидаемый результат:** Каждый инсайт получает контекст выбранной компании, учитывает общий групповой контекст; записи и кэш независимы для трёх компаний.
 
 ## E2E
 
@@ -1478,6 +1580,39 @@ Feign отправляет PDF и декодирует результат ана
 
 **Ожидаемый результат:** Ожидается 403; текущий код возвращает 200 и тест отмечен known-defect до исправления.
 
+### TestE2EConcurrentCompanyInsightsKeepSeparateCacheEntries
+
+Параллельные инсайты сохраняют отдельные результаты для каждой компании
+
+`alpha.business.insight.core.qa.insights.InsightConcurrencyHttpE2eTest#TestE2EConcurrentCompanyInsightsKeepSeparateCacheEntries`
+
+1. Одновременно отправить POST для трёх компаний с одинаковым событием
+2. Сверить разные id и trace_id, сохранённые записи и GET каждой компании
+
+**Ожидаемый результат:** Для каждой компании сохраняются отдельные id и trace_id, а GET возвращает результат её POST.
+
+### TestE2EConcurrentInsightPostsShareCachedResult
+
+Параллельные POST одной компании возвращают общий кэшированный результат
+
+`alpha.business.insight.core.qa.insights.InsightConcurrencyHttpE2eTest#TestE2EConcurrentInsightPostsShareCachedResult`
+
+1. Одновременно отправить два POST для одинаковых компании и события
+2. Сравнить ответы обоих запросов и сохранённый инсайт
+
+**Ожидаемый результат:** Ожидаются одинаковые ответы и одна сохранённая запись инсайта.
+
+### TestE2EConcurrentPdfUploadsKeepArtifactsIndependent
+
+Параллельные загрузки PDF сохраняют независимые артефакты
+
+`alpha.business.insight.core.qa.documents.DocumentConcurrencyHttpE2eTest#TestE2EConcurrentPdfUploadsKeepArtifactsIndependent`
+
+1. Одновременно загрузить несколько разных PDF
+2. Сверить идентификаторы документов, метаданные, оригиналы и чанки
+
+**Ожидаемый результат:** Каждая загрузка сохраняет собственные байты и связанные записи без смешивания артефактов.
+
 ### TestE2EDocumentAccessRules
 
 Запись доступна только администратору, чтение требует JWT
@@ -1489,7 +1624,6 @@ Feign отправляет PDF и декодирует результат ана
 
 **Ожидаемый результат:** Ожидаются 403 для директора и 401 для анонимного запроса.
 
-## Smoke
 
 ### TestSmokeConsumerInsightHttpJourney
 
@@ -1501,6 +1635,75 @@ Feign отправляет PDF и декодирует результат ана
 2. Через HTTP найти компанию и событие, проверить отсутствие кэша, сгенерировать инсайт и прочитать его повторно.
 
 **Ожидаемый результат:** Директор проходит весь путь; повторное чтение совпадает с генерацией, запись связана с компанией и событием, заглушки явно помечены.
+
+
+### TestE2ECatalogEventsCreateReadAndList
+
+Синтетический каталог событий проходит HTTP round-trip
+
+`alpha.business.insight.core.qa.events.EventCatalogHttpE2eTest#TestE2ECatalogEventsCreateReadAndList`
+
+1. Загрузить и проверить синтетический каталог PR65; получить JWT администратора и трёх директоров.
+2. Создать и прочитать события через HTTP, проверить фильтры, страницы и чтение директорами.
+
+**Ожидаемый результат:** Сохраняются исходные поля и статус PROCESSING; страницы содержат 7, 7 и 6 записей без повторов, фильтр URL оставляет E20, READY не включает новые записи, директоры читают события. Данные явно синтетические; внешняя LLM не используется.
+
+### TestE2ECompanyDirectorsCannotCreateCatalogEvents
+
+Директоры компаний не могут создавать события
+
+`alpha.business.insight.core.qa.events.EventCatalogHttpE2eTest#TestE2ECompanyDirectorsCannotCreateCatalogEvents`
+
+1. Получить JWT каждого тестового директора и проверить роль через /auth/me.
+2. Отправить POST /events и сравнить число записей до и после запроса.
+
+**Ожидаемый результат:** Для CREDIT, TRADE и UNASSIGNED ожидается 403; запись события не создаётся.
+
+### TestE2ECreditDirectorReadsGrantedCompanyProfile
+
+Директор читает выданный кредитный профиль
+
+`alpha.business.insight.core.qa.company.CompanyUsersHttpE2eTest#TestE2ECreditDirectorReadsGrantedCompanyProfile`
+
+1. Создать изолированные профили и получить JWT трёх тестовых директоров.
+2. Запросить профиль и HTTP-топ компании кредитного директора.
+
+**Ожидаемый результат:** hasLoan=true и hasForeignTrade=false; профиль и лента доступны при выданном grant.
+
+### TestE2EDirectorCannotReadCompanyWithoutGrant
+
+Профиль и топ компании доступны только при наличии grant
+
+`alpha.business.insight.core.qa.company.CompanyUsersHttpE2eTest#TestE2EDirectorCannotReadCompanyWithoutGrant`
+
+1. Создать кредитный, торговый и невыданный профили; получить отдельные JWT директоров.
+2. Для CREDIT→trade, TRADE→credit и UNASSIGNED→unassigned отдельно запросить профиль и HTTP-топ.
+
+**Ожидаемый результат:** Все шесть независимых запросов без grant возвращают 403.
+
+### TestE2EProcessingEventIsExcludedFromCompanyTop
+
+HTTP-топ не включает событие в обработке
+
+`alpha.business.insight.core.qa.company.CompanyUsersHttpE2eTest#TestE2EProcessingEventIsExcludedFromCompanyTop`
+
+1. Создать синтетическое событие с уникальной маркировкой через HTTP от администратора.
+2. Запросить HTTP-топ кредитной компании и проверить массив, лимит и отсутствие ID события.
+
+**Ожидаемый результат:** Событие имеет статус PROCESSING; топ является массивом не более чем из трёх записей и не содержит его ID.
+
+### TestE2ETradeDirectorReadsGrantedCompanyProfile
+
+Директор читает выданный профиль внешней торговли
+
+`alpha.business.insight.core.qa.company.CompanyUsersHttpE2eTest#TestE2ETradeDirectorReadsGrantedCompanyProfile`
+
+1. Создать изолированные профили и получить JWT трёх тестовых директоров.
+2. Запросить профиль и HTTP-топ компании торгового директора.
+
+**Ожидаемый результат:** hasLoan=false, hasForeignTrade=true и страна Китай; профиль и лента доступны при выданном grant.
+
+## Smoke
 
 ### TestSmokeCompanyContextCalculations
 

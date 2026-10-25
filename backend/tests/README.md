@@ -39,7 +39,18 @@ mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report -Dtest=SmokeSuite
 mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report -Dgroups=unit
 mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report '-Dgroups=integration & documents'
 mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report '-Dtest=Document*Test'
+mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report '-Dgroups=e2e & concurrency'
 ```
+
+Concurrency HTTP-проверки — ограниченные корректностные сценарии: одновременно выполняются не более трёх запросов к локальному тестовому серверу, внешние ML-вызовы заменены локальными стабами. Эти проверки не измеряют производительность и не задают SLA.
+
+Во всех контекстах Spring Test чат отключён, а OpenAI endpoint закреплён за loopback; изолированные `ApplicationContextRunner` HTTP-контракт-тесты могут явно поднимать локальный ответчик. ML не подменяется глобально, поэтому тесты настоящего Python-сервиса сохраняют свой режим. HTTP-сценарии событий и профилей компании используют `OfflineEventsE2eTest`, который до запросов дополнительно проверяет локальную ML-заглушку. Для отдельного запуска:
+
+```bash
+mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report '-Dtest=CompanyUsersHttpE2eTest,EventCatalogHttpE2eTest'
+```
+
+В ephemeral Keycloak-контейнере Testcontainers тестовый realm дополняется пользователями `director_credit` / `credit-dev`, `director_trade` / `trade-dev` и `director_unassigned` / `unassigned-dev`; они существуют только на время тестов и не добавляются в локальное приложение. Пользователь CREDIT получает grant на кредитный профиль (`hasLoan=true`, `hasForeignTrade=false`), TRADE — на торговый (`hasLoan=false`, `hasForeignTrade=true`, страна Китай). UNASSIGNED не получает grant. Внешняя LLM или модельный endpoint не вызываются; качество внешней модели не проверяется.
 
 Пустая выборка считается ошибкой. `clean` удаляет результаты предыдущего запуска.
 Полный `verify` проверяет общее покрытие строк production-кода не ниже 70%;

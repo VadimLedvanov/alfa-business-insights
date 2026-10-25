@@ -112,7 +112,7 @@ class LlmClientHttpIntegrationTest {
                                     + "/v1",
                             "spring.ai.openai.chat.model=qwen/qwen3.6-35b-a3b",
                             "spring.ai.openai.api-key=test-key",
-                            "spring.ai.openai.chat.max-tokens=2222")
+                            "spring.ai.openai.chat.max-completion-tokens=2222")
                     .run(
                             application -> {
                                 ObjectNode result =
@@ -139,12 +139,24 @@ class LlmClientHttpIntegrationTest {
             assertThat(request.path("model").asString())
                     .as("модель в запросе провайдеру")
                     .isEqualTo("qwen/qwen3.6-35b-a3b");
-            assertThat(request.path("max_tokens").asInt())
+            assertThat(request.path("max_completion_tokens").asInt())
                     .as("лимит токенов в запросе")
                     .isEqualTo(2222);
-            assertThat(request.path("messages").get(0).path("content").asString())
+            JsonNode messages = request.path("messages");
+            assertThat(messages.size()).isEqualTo(2);
+            JsonNode systemMessage = messages.get(0);
+            JsonNode userMessage = messages.get(1);
+            assertThat(systemMessage.path("role").asString()).isEqualTo("system");
+            assertThat(userMessage.path("role").asString()).isEqualTo("user");
+            String systemContent = systemMessage.path("content").asString();
+            assertThat(systemContent)
                     .as("системная инструкция для недоверенных данных")
-                    .contains("данные", "инструкции");
+                    .contains("данные", "инструкции")
+                    .doesNotContain("недоверенный текст");
+            JsonNode userPayload = mapper.readTree(userMessage.path("content").asString());
+            assertThat(userPayload.path("external_data").asString())
+                    .as("внешние данные сохранены как JSON пользователя")
+                    .isEqualTo("недоверенный текст");
             assertThat(request.path("response_format").path("type").asString())
                     .as("формат ответа LLM")
                     .isEqualTo("json_object");

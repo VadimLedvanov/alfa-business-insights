@@ -32,6 +32,11 @@ class ConsumerInsightHttpSmokeTest extends RealStackE2eTest {
     /** Удаляет запись инсайта, событие, грант и компанию, созданные тестом. */
     @AfterEach
     void removeFixture() {
+        jdbc.update(
+                "DELETE FROM dialog_messages WHERE insight_id IN "
+                        + "(SELECT id FROM insights WHERE company_id=? AND event_id=?)",
+                companyId,
+                eventId);
         jdbc.update("DELETE FROM insights WHERE company_id=? AND event_id=?", companyId, eventId);
         jdbc.update(
                 "DELETE FROM company_payment_summaries WHERE payer_company_id=? OR recipient_company_id=?",
