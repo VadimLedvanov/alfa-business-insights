@@ -31,6 +31,7 @@ public class LlmClient {
 
     /** Выполняет ровно один вызов стадии; внешние материалы передаются только как данные. */
     public ObjectNode complete(String stage, ObjectNode input) {
+        long startedAt = System.nanoTime();
         String instruction = switch (stage) {
             case "plan" -> "Составь план анализа и верни {\"search_queries\":[\"поисковый запрос\"]}. Максимум 3 запроса.";
             case "draft" -> "Подготовь черновик персонального разбора по контракту. Отдельно оцени значимость события: "
@@ -43,6 +44,7 @@ public class LlmClient {
             default -> throw new IllegalArgumentException("Неизвестная стадия LLM");
         };
         if (chatModel == null) {
+            log.info("LLM stage skipped stage={} reason=stub", stage);
             return stub(stage);
         }
         String system = """
@@ -67,15 +69,30 @@ public class LlmClient {
             response = chatModel.call(new Prompt(List.of(new SystemMessage(system + "\n" + instruction),
                     new UserMessage(mapper.writeValueAsString(input)))));
         } catch (RuntimeException exception) {
-            // Не раскрываем тело ошибки провайдера и не повторяем платный запрос автоматически.
+            log.error("LLM stage unavailable stage={} durationMs={} errorType={}", stage,
+                    elapsedMillis(startedAt), exception.getClass().getSimpleName());
             throw new ComponentUnavailableException("LLM");
         }
+        String invalidResponseReason = "json_parse_failed";
         try {
             if (response == null || response.getResult() == null) {
+                invalidResponseReason = "empty_response";
                 throw new IllegalArgumentException("Пустой ответ LLM");
+            }
+            if (response.getResult().getOutput() == null) {
+                invalidResponseReason = "missing_output";
+                throw new IllegalArgumentException("Нет содержимого в ответе LLM");
             }
             String text = response.getResult().getOutput().getText();
             if (text == null || text.isBlank()) {
+                invalidResponseReason = "empty_content";
+                var usage = response.getMetadata().getUsage();
+                log.error("LLM returned empty content stage={} model={} finishReason={} promptTokens={} completionTokens={} toolCalls={} outputMetadataKeys={}",
+                        stage, response.getMetadata().getModel(), response.getResult().getMetadata().getFinishReason(),
+                        usage == null ? null : usage.getPromptTokens(),
+                        usage == null ? null : usage.getCompletionTokens(),
+                        response.getResult().getOutput().hasToolCalls(),
+                        response.getResult().getOutput().getMetadata().keySet());
                 throw new IllegalArgumentException("Пустое содержимое ответа LLM");
             }
             String json = text.trim();
@@ -85,19 +102,26 @@ public class LlmClient {
             int objectStart = json.indexOf('{');
             int objectEnd = json.lastIndexOf('}');
             if (objectStart < 0 || objectEnd < objectStart) {
+                invalidResponseReason = "json_object_missing";
                 throw new IllegalArgumentException("Ответ LLM не содержит JSON-объект");
             }
             JsonNode content = mapper.readTree(json.substring(objectStart, objectEnd + 1));
             if (!(content instanceof ObjectNode object)) {
+                invalidResponseReason = "root_is_not_object";
                 throw new IllegalArgumentException("Ожидается JSON-объект LLM");
             }
+            log.info("LLM stage completed stage={} durationMs={}", stage, elapsedMillis(startedAt));
             return object;
         } catch (RuntimeException exception) {
-            // Не журналируем текст ответа: он может содержать внешние материалы или служебные данные.
-            log.warn("Некорректный ответ LLM на этапе {} ({})", stage, exception.getClass().getSimpleName());
+            log.error("LLM stage invalid_response stage={} durationMs={} reason={} errorType={}", stage,
+                    elapsedMillis(startedAt), invalidResponseReason, exception.getClass().getSimpleName());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "LLM вернула некорректный ответ");
         }
+    }
+
+    private static long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     private ObjectNode stub(String stage) {

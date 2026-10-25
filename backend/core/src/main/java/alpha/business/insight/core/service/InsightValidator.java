@@ -4,6 +4,8 @@ import alpha.business.insight.core.dto.InsightFragment;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -20,6 +22,7 @@ import java.util.UUID;
 /** Проверяет контракт и привязывает утверждения только к источникам текущего прогона. */
 @Component
 public class InsightValidator {
+    private static final Logger log = LoggerFactory.getLogger(InsightValidator.class);
     private final ObjectMapper mapper;
 
     public InsightValidator(ObjectMapper mapper) { this.mapper = mapper; }
@@ -27,12 +30,25 @@ public class InsightValidator {
     public ObjectNode validate(ObjectNode result, List<InsightFragment> fragments, List<String> missing,
                                UUID traceId, BigDecimal costRub) {
         ObjectNode validated = mapper.createObjectNode();
+        List<String> normalizationNotes = new java.util.ArrayList<>();
         for (String field : List.of("facts", "bank_view", "ai_inference", "hypotheses", "features_used",
                 "risks", "opportunities", "actions", "missing_data")) {
-            if (!result.path(field).isArray()) {
+            JsonNode value = result.get(field);
+            if ("ai_inference".equals(field) && (value == null || value.isNull())) {
+                validated.putArray(field);
+                normalizationNotes.add("LLM не вернула ai_inference; выводы отсутствуют");
+                log.warn("LLM contract field normalized field={} actualType={}", field,
+                        value == null ? "missing" : "null");
+            } else if ("ai_inference".equals(field) && value.isObject()) {
+                validated.putArray(field).add(value.deepCopy());
+                log.warn("LLM contract field normalized field={} actualType=object", field);
+            } else if (value == null || !value.isArray()) {
+                log.error("LLM contract violation field={} actualType={}", field,
+                        value == null ? "missing" : value.getNodeType());
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "LLM нарушила JSON-контракт: " + field);
+            } else {
+                validated.set(field, value.deepCopy());
             }
-            validated.set(field, result.get(field).deepCopy());
         }
         String significance = result.path("significance").asString();
         String significanceReason = result.path("significanceReason").asString();
@@ -47,6 +63,7 @@ public class InsightValidator {
         Map<String, InsightFragment> byId = new LinkedHashMap<>();
         fragments.forEach(fragment -> byId.put(fragment.fragmentId().toString(), fragment));
         Set<String> missingData = new LinkedHashSet<>(missing);
+        missingData.addAll(normalizationNotes);
         result.path("missing_data").forEach(item -> {
             if (item.isString() && !item.asString().isBlank()) { missingData.add(item.asString()); }
         });

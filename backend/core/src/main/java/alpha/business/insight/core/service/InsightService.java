@@ -22,6 +22,8 @@ import alpha.business.insight.core.repository.InsightRepository;
 import alpha.business.insight.core.repository.UserCompanyAccessRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
@@ -36,22 +38,15 @@ import tools.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 
 /** Генерирует инсайт и сохраняет результат для текущей версии материалов события. */
 @Service
 @RequiredArgsConstructor
 public class InsightService {
+    private static final Logger log = LoggerFactory.getLogger(InsightService.class);
+    private static final int MAX_GROUP_MEMBERS_IN_LLM_CONTEXT = 20;
     private final InsightRepository insights;
     private final DialogMessageRepository messages;
     private final CompanyRepository companies;
@@ -87,7 +82,24 @@ public class InsightService {
         if (cached.isPresent()) {
             return response(cached.get());
         }
-        Insight generated = analyze(companyId, event, UUID.randomUUID());
+        UUID traceId = UUID.randomUUID();
+        long startedAt = System.nanoTime();
+        log.info("Insight generation started traceId={} companyId={} eventId={}", traceId, companyId, eventId);
+        Insight generated;
+        try {
+            generated = analyze(companyId, event, traceId);
+        } catch (RuntimeException exception) {
+            Object status = exception instanceof ResponseStatusException responseStatus
+                    ? responseStatus.getStatusCode().value() : "INTERNAL_ERROR";
+            String reason = exception instanceof ResponseStatusException responseStatus
+                    ? responseStatus.getReason() : null;
+            log.error("Insight generation failed traceId={} companyId={} eventId={} status={} reason={} errorType={} durationMs={}",
+                    traceId, companyId, eventId, status, reason, exception.getClass().getSimpleName(),
+                    (System.nanoTime() - startedAt) / 1_000_000);
+            throw exception;
+        }
+        log.info("Insight generation completed traceId={} companyId={} eventId={} durationMs={}", traceId,
+                companyId, eventId, (System.nanoTime() - startedAt) / 1_000_000);
         String significance = String.valueOf(generated.getPayload().get("significance"));
         String reason = String.valueOf(generated.getPayload().get("significanceReason"));
         String summary = "Инсайт сформирован для компании по событию «" + event.getTitle() + "».";
@@ -164,7 +176,7 @@ public class InsightService {
                 profile.organizationType() == null ? "" : profile.organizationType(),
                 profile.businessLifecycleStage() == null ? "" : profile.businessLifecycleStage(),
                 profile.region() == null ? "" : profile.region())) {
-            if (!value.toString().isBlank()) details.add(value.toString());
+            if (!value.isBlank()) details.add(value);
         }
         if (Boolean.TRUE.equals(profile.hasLoan())) details.add("кредит финансирование заём");
         if (Boolean.TRUE.equals(profile.hasForeignTrade())) details.add("внешняя торговля импорт экспорт");
@@ -216,7 +228,15 @@ public class InsightService {
         CompanyContext context = contexts.getContext(companyId);
         List<String> missing = new ArrayList<>(context.missingData());
         ObjectNode external = mapper.createObjectNode();
-        external.set("company", mapper.valueToTree(context));
+        ObjectNode company = mapper.valueToTree(context);
+        if (context.group().size() > MAX_GROUP_MEMBERS_IN_LLM_CONTEXT) {
+            company.set("group", mapper.valueToTree(
+                    context.group().subList(0, MAX_GROUP_MEMBERS_IN_LLM_CONTEXT)));
+            company.put("groupMemberCount", context.group().size());
+            missing.add("Для анализа переданы первые " + MAX_GROUP_MEMBERS_IN_LLM_CONTEXT + " из "
+                    + context.group().size() + " компаний группы");
+        }
+        external.set("company", company);
         external.set("event", mapper.valueToTree(EventReadDto.from(event)));
         Map<UUID, InsightFragment> fragments = new LinkedHashMap<>();
         if (event.getSourceType() == EventSourceType.TEXT) {
@@ -286,15 +306,16 @@ public class InsightService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Компания не найдена");
         }
         boolean authorized = user.getAuthorities().stream().anyMatch(role ->
-                role.getAuthority().equals("ROLE_SYSTEM_ADMIN")
-                        || role.getAuthority().equals("ROLE_COMPANY_DIRECTOR"));
+                Objects.equals(role.getAuthority(), "ROLE_SYSTEM_ADMIN")
+                        || Objects.equals(role.getAuthority(), "ROLE_COMPANY_DIRECTOR"));
         if (!authorized && !access.hasAccess(user.getName(), companyId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Нет доступа к компании");
         }
     }
 
     private Map<String, Object> asMap(ObjectNode node) {
-        return mapper.convertValue(node, new TypeReference<Map<String, Object>>() {});
+        return mapper.convertValue(node, new TypeReference<>() {
+        });
     }
 
     private Map<String, Object> response(Insight insight) {

@@ -19,7 +19,8 @@ spring:
       max-retries: 0
       chat:
         model: z-ai/glm-5.3-flash
-        max-tokens: 3000
+        max-completion-tokens: 6000
+        reasoning-effort: low
         response-format:
           type: JSON_OBJECT
   servlet:
