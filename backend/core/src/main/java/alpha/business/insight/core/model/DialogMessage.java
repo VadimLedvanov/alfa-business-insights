@@ -55,4 +55,13 @@ public class DialogMessage {
      */
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    public static DialogMessage of(Insight insight, String role, String text) {
+        DialogMessage message = new DialogMessage();
+        message.insight = insight;
+        message.role = role;
+        message.text = text;
+        message.createdAt = Instant.now();
+        return message;
+    }
 }

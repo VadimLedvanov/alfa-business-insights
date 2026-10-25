@@ -34,7 +34,35 @@ public interface DocumentAnalyzer {
     @PostMapping(value = "/embeddings", consumes = MediaType.APPLICATION_JSON_VALUE)
     Embedding embedding(@RequestBody Map<String, String> request);
 
+    /** Получает векторы компании и списка событий одним запросом для ранжирования кандидатов. */
+    default EmbeddingComparison compare(String companyText, List<String> eventTexts) {
+        EmbeddingComparison result = compareEmbeddings(Map.of("companyText", companyText, "eventTexts", eventTexts));
+        if (result == null || result.embeddingModel() == null || result.embeddingModel().isBlank()
+                || result.embeddingDimension() < 1 || result.companyEmbedding() == null
+                || result.eventEmbeddings() == null || result.eventEmbeddings().size() != eventTexts.size()
+                || !validVector(result.companyEmbedding(), result.embeddingDimension())) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "ML вернул некорректный результат сравнения embeddings");
+        }
+        for (List<Float> vector : result.eventEmbeddings()) {
+            if (!validVector(vector, result.embeddingDimension())) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "ML вернул некорректный embedding события");
+            }
+        }
+        return result;
+    }
+
+    @PostMapping(value = "/embeddings/compare", consumes = MediaType.APPLICATION_JSON_VALUE)
+    EmbeddingComparison compareEmbeddings(@RequestBody Map<String, Object> request);
+
+    private static boolean validVector(List<Float> vector, int dimension) {
+        return vector != null && vector.size() == dimension
+                && vector.stream().noneMatch(value -> value == null || !Float.isFinite(value))
+                && vector.stream().anyMatch(value -> value != 0f);
+    }
+
     record Embedding(String embeddingModel, int embeddingDimension, boolean stub, List<Float> embedding) {}
+    record EmbeddingComparison(String embeddingModel, int embeddingDimension, boolean stub,
+                               List<Float> companyEmbedding, List<List<Float>> eventEmbeddings) {}
 
     /**
      * Передаёт PDF в теле запроса; записи в PostgreSQL и Qdrant остаются ответственностью Java.

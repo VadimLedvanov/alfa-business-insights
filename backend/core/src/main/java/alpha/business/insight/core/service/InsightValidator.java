@@ -34,6 +34,15 @@ public class InsightValidator {
             }
             validated.set(field, result.get(field).deepCopy());
         }
+        String significance = result.path("significance").asString();
+        String significanceReason = result.path("significanceReason").asString();
+        if (significance == null || !Set.of("SIGNIFICANT", "NOT_SIGNIFICANT", "UNKNOWN").contains(significance)
+                || significanceReason == null || significanceReason.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "LLM нарушила JSON-контракт: significance и significanceReason");
+        }
+        validated.put("significance", significance);
+        validated.put("significanceReason", significanceReason);
         result = validated;
         Map<String, InsightFragment> byId = new LinkedHashMap<>();
         fragments.forEach(fragment -> byId.put(fragment.fragmentId().toString(), fragment));

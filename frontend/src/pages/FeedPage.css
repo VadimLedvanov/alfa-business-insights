@@ -13,6 +13,14 @@
 
 .feed-layout { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(255px, 1fr); gap: 20px; }
 .feed-list { display: flex; flex-direction: column; gap: 12px; }
+.feed-top-event { display: flex; flex-direction: column; gap: 6px; }
+.feed-top-event__rank { color: var(--color-light-text-secondary); font-size: 11px; }
+.feed-event-card { display: flex; width: 100%; flex-direction: column; gap: 10px; border: 1px solid var(--color-light-border-secondary); color: var(--color-light-text-primary); text-align: left; cursor: pointer; transition: border-color .15s, transform .15s; }
+.feed-event-card:hover { border-color: var(--color-light-border-primary); transform: translateY(-1px); }
+.feed-event-card__title { font-size: 17px; line-height: 24px; font-weight: 600; }
+.feed-event-card__copy { color: var(--color-light-text-secondary); font-size: 14px; line-height: 20px; }
+.feed-event-card__action { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--color-light-border-secondary); font-size: 13px; font-weight: 600; }
+.feed-event-card__action span { color: var(--color-light-graphic-primary); font-size: 20px; }
 .feed-list .insight-tile { border-radius: 15px; padding: 21px 23px; }
 .feed-aside { display: flex; flex-direction: column; gap: 18px; }
 
