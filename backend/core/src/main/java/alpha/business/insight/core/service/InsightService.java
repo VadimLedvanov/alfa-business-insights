@@ -285,8 +285,10 @@ public class InsightService {
         if (!companies.existsById(companyId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Компания не найдена");
         }
-        boolean admin = user.getAuthorities().stream().anyMatch(role -> role.getAuthority().equals("ROLE_SYSTEM_ADMIN"));
-        if (!admin && !access.hasAccess(user.getName(), companyId)) {
+        boolean authorized = user.getAuthorities().stream().anyMatch(role ->
+                role.getAuthority().equals("ROLE_SYSTEM_ADMIN")
+                        || role.getAuthority().equals("ROLE_COMPANY_DIRECTOR"));
+        if (!authorized && !access.hasAccess(user.getName(), companyId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Нет доступа к компании");
         }
     }
