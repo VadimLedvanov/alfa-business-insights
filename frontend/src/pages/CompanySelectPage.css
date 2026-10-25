@@ -1,0 +1,9 @@
+.companies-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 20px;
+}
+.company-card { display: flex; flex-direction: column; }
+.company-card--selected { outline: 2px solid var(--color-light-accent-primary); outline-offset: -2px; }
+.company-card__name { font-size: 20px; line-height: 26px; font-weight: 700; letter-spacing: -0.3px; margin: 18px 0 4px; }
+.company-card__industry { font-size: 13px; line-height: 18px; color: var(--color-light-text-secondary); margin: 0; }
