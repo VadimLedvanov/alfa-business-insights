@@ -1,5 +1,6 @@
 package alpha.business.insight.core.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.not;
@@ -60,14 +61,22 @@ class ApiExceptionHandlerTest {
     @Test
     @Step("Не раскрывает внутренние сведения об ошибке")
     void unexpectedErrorDoesNotExposeDetails() throws Exception {
-        request()
-                .when()
-                .get("/api/errors/unexpected")
-                .then()
-                .statusCode(500)
-                .body("code", equalTo("INTERNAL_ERROR"))
-                .body("message", equalTo("Внутренняя ошибка сервера"))
-                .body("retryable", equalTo(false));
+        var response =
+                request()
+                        .when()
+                        .get("/api/errors/unexpected")
+                        .then()
+                        .statusCode(500)
+                        .body("code", equalTo("INTERNAL_ERROR"))
+                        .body("message", equalTo("Внутренняя ошибка сервера"))
+                        .body("retryable", equalTo(false))
+                        .body("", not(hasKey("trace")))
+                        .body("", not(hasKey("stackTrace")))
+                        .body("", not(hasKey("exception")))
+                        .body("", not(hasKey("detail")))
+                        .extract()
+                        .response();
+        assertThat(response.asString()).doesNotContain("secret");
     }
 
     /** Форматирует ошибку слишком большого файла. */

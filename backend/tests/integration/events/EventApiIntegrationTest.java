@@ -14,6 +14,7 @@ import io.qameta.allure.Step;
 import io.restassured.module.mockmvc.specification.MockMvcRequestSpecification;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Tag;
@@ -188,7 +189,9 @@ class EventApiIntegrationTest {
     @Step("Отклоняет некорректное тело события")
     void givenInvalidBody_whenCreateEvent_thenBadRequestWithoutSaving(String request)
             throws Exception {
-        // Действие
+        List<Map<String, Object>> eventsBeforeRequest = eventRows();
+
+        // Действие: невалидное тело отклоняется.
         request()
                 .postProcessors(role("SYSTEM_ADMIN"))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -201,8 +204,10 @@ class EventApiIntegrationTest {
                 .body("message", matchesPattern("(?s).*\\S.*"))
                 .body("retryable", equalTo(false));
 
-        // Проверки побочного эффекта
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM events", Long.class)).isZero();
+        // Проверка: отклонённый запрос не меняет сохранённые события.
+        assertThat(eventRows())
+                .as("события не меняются после отклонения некорректного тела")
+                .isEqualTo(eventsBeforeRequest);
     }
 
     /** Отклоняет запрос без тела. */
@@ -226,6 +231,8 @@ class EventApiIntegrationTest {
     @ValueSource(strings = {"COMPANY_DIRECTOR", "OTHER_ROLE"})
     @Step("Запрещает создание неадминистратору")
     void givenNonAdmin_whenCreateEvent_thenForbiddenWithoutSaving(String role) throws Exception {
+        List<Map<String, Object>> eventsBeforeRequest = eventRows();
+
         request()
                 .postProcessors(role(role))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -234,7 +241,9 @@ class EventApiIntegrationTest {
                 .post("/api/events")
                 .then()
                 .statusCode(403);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM events", Long.class)).isZero();
+        assertThat(eventRows())
+                .as("события не меняются после отказа в создании")
+                .isEqualTo(eventsBeforeRequest);
     }
 
     /** Требует авторизацию для событий. */
@@ -266,20 +275,28 @@ class EventApiIntegrationTest {
         UUID first = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID second = UUID.fromString("00000000-0000-0000-0000-000000000002");
         UUID third = UUID.fromString("00000000-0000-0000-0000-000000000003");
+        String titlePrefix = "Event API order " + UUID.randomUUID();
+        String firstTitle = titlePrefix + " — Старое";
+        String secondTitle = titlePrefix + " — Новое";
+        String thirdTitle = titlePrefix + " — Новое PDF";
         jdbc.update(
                 """
                 INSERT INTO events (id, title, source_type, source_ref, status, created_at)
-                VALUES (?, 'Старое', 'TEXT', 'Текст', 'FAILED', '2026-10-23T10:00:00Z'),
-                       (?, 'Новое', 'URL', 'https://example.org', 'READY', '2026-10-24T10:00:00Z'),
-                       (?, 'Новое PDF', 'PDF', 'report.pdf', 'PROCESSING', '2026-10-24T10:00:00Z')
+                VALUES (?, ?, 'TEXT', 'Текст', 'FAILED', '2026-10-23T10:00:00Z'),
+                       (?, ?, 'URL', 'https://example.org', 'READY', '2026-10-24T10:00:00Z'),
+                       (?, ?, 'PDF', 'report.pdf', 'PROCESSING', '2026-10-24T10:00:00Z')
                 """,
                 first,
+                firstTitle,
                 second,
-                third);
+                secondTitle,
+                third,
+                thirdTitle);
 
         // Действие и проверки
         request()
                 .postProcessors(role(role))
+                .queryParam("title", titlePrefix)
                 .when()
                 .get("/api/events")
                 .then()
@@ -289,7 +306,7 @@ class EventApiIntegrationTest {
                 .body("content[1].id", equalTo(second.toString()))
                 .body("content[2].id", equalTo(first.toString()))
                 .body("content[2].status", equalTo("FAILED"))
-                .body("content[0].title", equalTo("Новое PDF"))
+                .body("content[0].title", equalTo(thirdTitle))
                 .body("content[0].sourceType", equalTo("PDF"))
                 .body("content[0].createdAt", notNullValue())
                 .body("content[0]", not(hasKey("sourceRef")))
@@ -301,16 +318,20 @@ class EventApiIntegrationTest {
                 .get("/api/events/" + second)
                 .then()
                 .statusCode(200)
-                .body("title", equalTo("Новое"))
+                .body("title", equalTo(secondTitle))
                 .body("status", equalTo("READY"));
     }
 
-    /** Возвращает пустую страницу событий. */
+    /** Возвращает пустую страницу для фильтра без совпадений. */
     @Test
-    @Step("Возвращает пустую страницу событий")
+    @Step("Возвращает пустую страницу для фильтра без совпадений")
     void givenNoEvents_whenList_thenReturnEmptyArray() throws Exception {
+        // Подготовка: случайный заголовок не совпадает с существующими событиями.
+        String unmatchedTitle = "no-event-" + UUID.randomUUID();
+
         request()
                 .postProcessors(role("COMPANY_DIRECTOR"))
+                .queryParam("title", unmatchedTitle)
                 .when()
                 .get("/api/events")
                 .then()
@@ -368,21 +389,43 @@ class EventApiIntegrationTest {
     @ParameterizedTest
     @ValueSource(strings = {"", " ", "\t"})
     @Step("Игнорирует пустые фильтры событий")
-    void givenBlankFilters_whenList_thenIgnoreFilters(String filter) {
+    void givenBlankFilters_whenList_thenIgnoreFilters(String filter) throws Exception {
         // Подготовка
         insertListEvents();
+        long persistedEventCount = jdbc.queryForObject("SELECT COUNT(*) FROM events", Long.class);
 
-        // Действие и проверки
-        request()
-                .postProcessors(role("SYSTEM_ADMIN"))
-                .queryParam("title", filter)
-                .queryParam("status", filter)
-                .queryParam("sourceType", filter)
-                .when()
-                .get("/api/events")
-                .then()
-                .statusCode(200)
-                .body("totalElements", equalTo(5));
+        // Действие: считывает список без фильтров и с пустыми значениями фильтров.
+        JsonNode unfiltered =
+                mapper.readTree(
+                        request()
+                                .postProcessors(role("SYSTEM_ADMIN"))
+                                .when()
+                                .get("/api/events")
+                                .then()
+                                .statusCode(200)
+                                .extract()
+                                .asString());
+        JsonNode withBlankFilters =
+                mapper.readTree(
+                        request()
+                                .postProcessors(role("SYSTEM_ADMIN"))
+                                .queryParam("title", filter)
+                                .queryParam("status", filter)
+                                .queryParam("sourceType", filter)
+                                .when()
+                                .get("/api/events")
+                                .then()
+                                .statusCode(200)
+                                .extract()
+                                .asString());
+
+        // Проверка: пустые фильтры дают тот же список, а totalElements отражает все строки.
+        assertThat(withBlankFilters)
+                .as("полный ответ при пустых фильтрах совпадает с ответом без фильтров: %s", filter)
+                .isEqualTo(unfiltered);
+        assertThat(withBlankFilters.path("totalElements").asLong())
+                .as("число результатов совпадает с числом сохранённых событий")
+                .isEqualTo(persistedEventCount);
     }
 
     /** Ищет специальные символы заголовка как литералы, а не SQL-шаблоны. */
@@ -423,6 +466,11 @@ class EventApiIntegrationTest {
                 .get("/api/events")
                 .then()
                 .statusCode(400);
+    }
+
+    /** Считывает все поля событий в стабильном порядке для сравнения побочных эффектов. */
+    private List<Map<String, Object>> eventRows() {
+        return jdbc.queryForList("SELECT * FROM events ORDER BY id");
     }
 
     /** Создаёт фиксированный набор событий для проверки фильтрации и пагинации. */

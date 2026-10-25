@@ -7,6 +7,8 @@ import io.restassured.config.HttpClientConfig;
 import io.restassured.config.RestAssuredConfig;
 import io.restassured.specification.RequestSpecification;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import org.apache.http.conn.params.ConnManagerPNames;
 import org.apache.http.impl.client.DefaultHttpClient;
@@ -49,6 +51,26 @@ final class RestAssuredRequests {
                 RestAssuredConfig.config()
                         .redirect(redirectConfig().followRedirects(false))
                         .httpClient(httpClient);
-        return RestAssured.given().config(requestConfig).baseUri(uri.toString());
+        RequestSpecification request =
+                RestAssured.given()
+                        .config(requestConfig)
+                        .baseUri(uri.getScheme() + "://" + uri.getRawAuthority())
+                        .basePath(uri.getPath());
+        appendQueryParameters(request, uri.getRawQuery());
+        return request;
+    }
+
+    /** Декодирует пары query один раз и сохраняет повторяющиеся имена параметров. */
+    private static void appendQueryParameters(RequestSpecification request, String rawQuery) {
+        if (rawQuery == null || rawQuery.isEmpty()) {
+            return;
+        }
+        for (String pair : rawQuery.split("&", -1)) {
+            String[] parts = pair.split("=", 2);
+            String name = URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
+            String value =
+                    parts.length == 1 ? "" : URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+            request.queryParam(name, value);
+        }
     }
 }

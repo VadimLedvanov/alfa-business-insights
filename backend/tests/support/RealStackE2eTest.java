@@ -2,8 +2,11 @@ package alpha.business.insight.core.qa.support;
 
 import alpha.business.insight.core.qa.connectors.BackendClient;
 import alpha.business.insight.core.qa.connectors.KeycloakClient;
+import alpha.business.insight.core.qa.helpers.TestUsers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.qameta.allure.Allure;
 import java.io.IOException;
 import java.net.URI;
@@ -57,7 +60,7 @@ public abstract class RealStackE2eTest {
                     .withEnv("KC_HEALTH_ENABLED", "true")
                     .withCommand("start-dev", "--import-realm")
                     .withCopyFileToContainer(
-                            MountableFile.forHostPath(realmImportFile().toString()),
+                            MountableFile.forHostPath(realmImportFile().toString(), 0644),
                             "/opt/keycloak/data/import/alfa-business-insights-realm.json")
                     .waitingFor(
                             Wait.forHttp("/health/ready")
@@ -74,7 +77,8 @@ public abstract class RealStackE2eTest {
         Startables.deepStart(Stream.of(POSTGRES, KEYCLOAK, QDRANT)).join();
     }
 
-    private final List<String> httpExchanges = new ArrayList<>();
+    private final List<String> httpExchanges =
+            java.util.Collections.synchronizedList(new ArrayList<>());
 
     protected BackendClient backend;
     protected KeycloakClient keycloak;
@@ -161,10 +165,46 @@ public abstract class RealStackE2eTest {
         while (directory != null) {
             Path candidate =
                     directory.resolve("infrastructure/keycloak/alfa-business-insights-realm.json");
-            if (Files.isRegularFile(candidate)) return candidate;
+            if (Files.isRegularFile(candidate)) return appendTestUsers(candidate);
             directory = directory.getParent();
         }
         throw new IllegalStateException(
                 "Cannot find imported Keycloak realm under the test working directory");
+    }
+
+    /** Создаёт временную копию realm import с тестовыми пользователями, не меняя исходный JSON. */
+    private static Path appendTestUsers(Path source) {
+        try {
+            ObjectNode realm = (ObjectNode) JSON.readTree(source.toFile());
+            ArrayNode users = realm.withArray("users");
+            for (TestUsers.Actor actor : TestUsers.Actor.values()) {
+                if (actor.importedForTests()) users.add(testUser(actor));
+            }
+            Path augmented = Files.createTempFile("alfa-business-insights-test-realm-", ".json");
+            JSON.writeValue(augmented.toFile(), realm);
+            augmented.toFile().deleteOnExit();
+            return augmented;
+        } catch (IOException exception) {
+            throw new IllegalStateException(
+                    "Cannot prepare the test Keycloak realm import", exception);
+        }
+    }
+
+    /** Строит realm import пользователя-директора с постоянным тестовым паролем. */
+    private static ObjectNode testUser(TestUsers.Actor actor) {
+        ObjectNode user = JSON.createObjectNode();
+        user.put("username", actor.username());
+        user.put("enabled", true);
+        user.put("firstName", actor.username());
+        user.put("lastName", "Test");
+        user.put("email", actor.username() + "@example.test");
+        user.put("emailVerified", true);
+        user.putArray("credentials")
+                .addObject()
+                .put("type", "password")
+                .put("value", actor.password())
+                .put("temporary", false);
+        user.putArray("realmRoles").add("COMPANY_DIRECTOR");
+        return user;
     }
 }

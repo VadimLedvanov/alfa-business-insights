@@ -382,15 +382,12 @@ class DocumentUploadIntegrationTest {
 
     /** Проверяет отмену загрузки при некорректном ответе анализатора. */
     @ParameterizedTest
-    @ValueSource(strings = {"document", "ordinal", "dimension", "nan", "empty", "exception"})
+    @ValueSource(strings = {"document", "ordinal", "dimension", "nan", "empty"})
     void invalidMlResponseCancelsUpload(String fault) throws Exception {
         // Подготовка: сформировать конкретный дефект ответа анализатора.
         when(analyzer.analyze(any(), any()))
                 .thenAnswer(
                         invocation -> {
-                            if (fault.equals("exception")) {
-                                throw new IllegalStateException("ML unavailable");
-                            }
                             UUID documentId = invocation.getArgument(0);
                             var chunk =
                                     new DocumentChunk(
@@ -421,6 +418,25 @@ class DocumentUploadIntegrationTest {
                 .then()
                 .statusCode(502);
         assertThat(documentCount()).isZero();
+        assertNoFiles();
+    }
+
+    /** Проверяет статус 503 и очистку, если ML недоступен во время анализа. */
+    @Test
+    void mlUnavailableReturns503AndCleansArtifacts() throws Exception {
+        when(analyzer.analyze(any(), any())).thenThrow(new IllegalStateException("ML unavailable"));
+
+        request()
+                .multiPart("file", "report.pdf", PDF, "application/pdf")
+                .postProcessors(jwt().authorities(new SimpleGrantedAuthority("ROLE_SYSTEM_ADMIN")))
+                .when()
+                .post("/api/admin/documents")
+                .then()
+                .statusCode(503)
+                .body("code", equalTo("ML_UNAVAILABLE"))
+                .body("retryable", equalTo(true));
+
+        assertThat(documentCount()).as("Записи после недоступности ML").isZero();
         assertNoFiles();
     }
 

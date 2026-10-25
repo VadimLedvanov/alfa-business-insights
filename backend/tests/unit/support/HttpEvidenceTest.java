@@ -3,11 +3,22 @@ package alpha.business.insight.core.qa.connectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import alpha.business.insight.core.qa.helpers.TestEvidence;
+import com.sun.net.httpserver.HttpServer;
+import io.qameta.allure.Allure;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
+import io.qameta.allure.Step;
 import io.qameta.allure.Story;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -213,6 +224,82 @@ class HttpEvidenceTest {
                                     "application/pdf",
                                     "report.pdf");
                 });
+    }
+
+    /** Проверяет передачу повторяющихся и закодированных query-параметров по локальному HTTP. */
+    @Test
+    @DisplayName("TestUnitPreserveEncodedAndRepeatedQueryParameters")
+    @Story("Передача query-параметров в локальный HTTP запрос")
+    @Step("Проверяет сохранение query-параметров HTTP-клиентом")
+    void TestUnitPreserveEncodedAndRepeatedQueryParameters() throws Exception {
+        AtomicReference<String> requestPath = new AtomicReference<>();
+        AtomicReference<String> rawQuery = new AtomicReference<>();
+        HttpServer server =
+                Allure.step(
+                        "1. Запустить локальный HTTP-приёмник query",
+                        () -> {
+                            HttpServer localServer =
+                                    HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+                            localServer.createContext(
+                                    "/",
+                                    exchange -> {
+                                        requestPath.set(exchange.getRequestURI().getPath());
+                                        rawQuery.set(exchange.getRequestURI().getRawQuery());
+                                        byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+                                        exchange.getResponseHeaders()
+                                                .add("Content-Type", "application/json");
+                                        exchange.sendResponseHeaders(200, response.length);
+                                        try (OutputStream output = exchange.getResponseBody()) {
+                                            output.write(response);
+                                        }
+                                    });
+                            localServer.start();
+                            return localServer;
+                        });
+        try {
+            BackendClient client =
+                    new BackendClient(
+                            URI.create(
+                                    "http://127.0.0.1:" + server.getAddress().getPort() + "/api"),
+                            ignored -> {});
+            var response =
+                    Allure.step(
+                            "2. Отправить GET с encoded и повторными query",
+                            () ->
+                                    client.get(
+                                            "/events?title=%5BSYNTHETIC+TEST%5D+rate+%26+cash"
+                                                    + "&sourceType=URL&sourceType=TEXT"
+                                                    + "&needle=rate%2B5%25",
+                                            null));
+
+            Allure.step(
+                    "3. Проверить фактический путь и значения запроса",
+                    () -> {
+                        assertThat(response.statusCode()).isEqualTo(200);
+                        assertThat(requestPath.get()).isEqualTo("/api/events");
+                        assertThat(rawQuery.get()).isNotBlank();
+                        Map<String, List<String>> parameters = decodeQuery(rawQuery.get());
+                        assertThat(parameters)
+                                .containsEntry("title", List.of("[SYNTHETIC TEST] rate & cash"))
+                                .containsEntry("sourceType", List.of("URL", "TEXT"))
+                                .containsEntry("needle", List.of("rate+5%"));
+                    });
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /** Декодирует query снимок локального сервера с сохранением порядка повторных ключей. */
+    private static Map<String, List<String>> decodeQuery(String rawQuery) {
+        Map<String, List<String>> decoded = new LinkedHashMap<>();
+        for (String pair : rawQuery.split("&", -1)) {
+            String[] parts = pair.split("=", 2);
+            String name = URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
+            String value =
+                    parts.length == 1 ? "" : URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+            decoded.computeIfAbsent(name, ignored -> new ArrayList<>()).add(value);
+        }
+        return decoded;
     }
 
     /** Проверяет отсутствие заданных секретов в отредактированной строке. */
