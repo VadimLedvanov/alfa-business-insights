@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import alpha.business.insight.core.dto.InsightFragment;
 import alpha.business.insight.core.service.InsightValidator;
+import io.qameta.allure.Allure;
 import io.qameta.allure.Step;
 import java.math.BigDecimal;
 import java.util.List;
@@ -20,12 +21,13 @@ class InsightValidatorTest {
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final UUID fragmentId = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private final UUID documentId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    private final UUID bankFragmentId = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
-    /** Удаляет неподтверждённые факты и позицию банка. */
+    /** Удаляет неподтверждённые факты и позицию банка из неподходящего материала. */
     @Test
-    @Step("Удаляет неподтверждённые факты и позицию банка")
+    @Step("Удаляет неподтверждённые факты и позицию банка из неподходящего материала")
     void removesUnretrievedFactsAndBankViewFromNonBankSources() {
-        // Подготовка: включает подтверждённый факт, неподтверждённые данные и обычный источник.
+        // Подготовка: ссылки ведут на реальный обычный фрагмент и реальный материал банка.
         ObjectNode input = empty();
         input.withArray("facts")
                 .addObject()
@@ -38,38 +40,206 @@ class InsightValidatorTest {
         input.withArray("facts").addObject().put("text", "Без ссылки");
         input.withArray("bank_view")
                 .addObject()
-                .put("text", "Приписанная позиция")
+                .put("text", "Позиция по обычному источнику")
                 .put("fragment_id", fragmentId.toString());
+        input.withArray("bank_view")
+                .addObject()
+                .put("text", "Позиция по синтетическому материалу")
+                .put("fragment_id", bankFragmentId.toString());
+        input.withArray("bank_view")
+                .addObject()
+                .put("text", "Подтверждённая позиция банка")
+                .put("fragment_id", documentId.toString());
         input.withArray("sources").addObject().put("url", "https://invented.example");
-        InsightFragment fragment =
+        InsightFragment ordinaryFragment =
                 new InsightFragment(fragmentId, null, 1, "Событие", "EVENT_TEXT", false);
+        InsightFragment syntheticBankFragment =
+                new InsightFragment(
+                        bankFragmentId, documentId, 2, "[ML STUB]", "BANK_ANALYTICS", true);
+        InsightFragment realBankFragment =
+                new InsightFragment(
+                        documentId, documentId, 3, "Материал банка", "BANK_ANALYTICS", false);
+        List<InsightFragment> fragments =
+                List.of(ordinaryFragment, syntheticBankFragment, realBankFragment);
 
         // Действие
         ObjectNode result =
-                new InsightValidator(mapper)
-                        .validate(
-                                input,
-                                List.of(fragment),
-                                List.of(),
-                                UUID.randomUUID(),
-                                BigDecimal.ZERO);
+                Allure.step(
+                        "1. Проверить ответ модели",
+                        () -> {
+                            Allure.addAttachment(
+                                    "input.json", "application/json", input.toPrettyString());
+                            return new InsightValidator(mapper)
+                                    .validate(
+                                            input,
+                                            fragments,
+                                            List.of(),
+                                            UUID.randomUUID(),
+                                            BigDecimal.ZERO);
+                        });
+        Allure.addAttachment("output.json", "application/json", result.toPrettyString());
 
         // Проверки
-        assertThat(result.path("facts").size())
-                .as("оставшийся факт с реальной ссылкой")
-                .isEqualTo(1);
-        assertThat(result.path("facts").get(0).path("fragment_id").asString())
-                .as("идентификатор подтверждающего фрагмента")
-                .isEqualTo(fragmentId.toString());
-        assertThat(result.path("bank_view").isEmpty())
-                .as("позиция банка из обычного источника")
-                .isTrue();
-        assertThat(result.path("missing_data").toString())
-                .as("причина отсутствия позиции банка")
-                .contains("банк");
-        assertThat(result.path("sources").toString())
-                .as("список проверенных источников")
-                .doesNotContain("invented.example");
+        Allure.step(
+                "2. Оставить только факт с проверенной ссылкой",
+                () -> {
+                    assertThat(result.path("facts").size())
+                            .as(
+                                    "число фактов после проверки: expected=1, actual=%s",
+                                    result.path("facts").size())
+                            .isEqualTo(1);
+                    assertThat(result.path("facts").get(0).path("text").asString())
+                            .as("текст факта с реальной ссылкой")
+                            .isEqualTo("Подтверждено");
+                    assertThat(result.path("facts").get(0).path("fragment_id").asString())
+                            .as("идентификатор подтверждающего фрагмента")
+                            .isEqualTo(fragmentId.toString());
+                });
+        Allure.step(
+                "3. Оставить позицию банка только по реальному материалу банка",
+                () -> {
+                    assertThat(result.path("bank_view").size())
+                            .as(
+                                    "число допустимых позиций банка: expected=1, actual=%s",
+                                    result.path("bank_view").size())
+                            .isEqualTo(1);
+                    assertThat(result.path("bank_view").get(0).path("text").asString())
+                            .as("текст позиции из реального материала банка")
+                            .isEqualTo("Подтверждённая позиция банка");
+                    assertThat(result.path("bank_view").get(0).path("fragment_id").asString())
+                            .as("ссылка позиции на реальный фрагмент банка")
+                            .isEqualTo(documentId.toString());
+                    assertThat(result.path("missing_data").toString())
+                            .as(
+                                    "причина отклонения позиций из обычного и синтетического материалов")
+                            .contains("Удалены неподтверждённые утверждения из bank_view");
+                });
+        Allure.step(
+                "4. Удалить непроверенный источник из списка источников",
+                () -> {
+                    assertThat(result.path("sources").size())
+                            .as(
+                                    "число исходных фрагментов: expected=3, actual=%s",
+                                    result.path("sources").size())
+                            .isEqualTo(3);
+                    assertThat(result.path("sources").findValuesAsString("fragment_id"))
+                            .as(
+                                    "идентификаторы реального обычного, синтетического и банковского источников")
+                            .containsExactlyInAnyOrder(
+                                    fragmentId.toString(),
+                                    bankFragmentId.toString(),
+                                    documentId.toString());
+                    assertThat(result.path("sources").toString())
+                            .as("проверенные источники")
+                            .doesNotContain("invented.example");
+                });
+    }
+
+    /** Переносит неподтверждённый факт в вывод с низкой уверенностью. */
+    @Test
+    @Step("Переносит неподтверждённый факт в вывод с низкой уверенностью")
+    void TestUnitDemotesUnreferencedFactToLowConfidenceInference() {
+        // Подготовка: неподтверждённый текст должен стать выводом, а подтверждённый факт —
+        // сохраниться.
+        String unsupportedText = "Рост спроса не подтверждён источником";
+        String existingInferenceText = "Рынок может расшириться";
+        ObjectNode input = empty();
+        input.withArray("facts").addObject().put("text", unsupportedText);
+        input.withArray("facts")
+                .addObject()
+                .put("text", "Подтверждённый факт")
+                .put("fragment_id", fragmentId.toString());
+        input.withArray("ai_inference")
+                .addObject()
+                .put("text", existingInferenceText)
+                .put("confidence", "high")
+                .putArray("based_on")
+                .add(fragmentId.toString());
+        InsightFragment fragment =
+                new InsightFragment(fragmentId, documentId, 1, "Материал", "EVENT_TEXT", false);
+
+        // Действие
+        ObjectNode result =
+                Allure.step(
+                        "1. Проверить ответ с неподтверждённым фактом",
+                        () -> {
+                            Allure.addAttachment(
+                                    "input.json", "application/json", input.toPrettyString());
+                            return new InsightValidator(mapper)
+                                    .validate(
+                                            input,
+                                            List.of(fragment),
+                                            List.of(),
+                                            UUID.randomUUID(),
+                                            BigDecimal.ZERO);
+                        });
+        Allure.addAttachment("output.json", "application/json", result.toPrettyString());
+
+        // Проверки
+        Allure.step(
+                "2. Сохранить подтверждённый факт и убрать неподтверждённый",
+                () -> {
+                    assertThat(result.path("facts").size())
+                            .as(
+                                    "число оставшихся фактов: expected=1, actual=%s",
+                                    result.path("facts").size())
+                            .isEqualTo(1);
+                    assertThat(result.path("facts").get(0).path("text").asString())
+                            .as("текст факта с реальной ссылкой")
+                            .isEqualTo("Подтверждённый факт");
+                    assertThat(result.path("facts").toString())
+                            .as("факты после валидации не должны содержать неподтверждённый текст")
+                            .doesNotContain(unsupportedText);
+                });
+        Allure.step(
+                "3. Добавить неподтверждённый текст как вывод с низкой уверенностью",
+                () -> {
+                    assertThat(result.path("ai_inference").toString())
+                            .as("неподтверждённый факт должен присутствовать среди выводов")
+                            .contains(unsupportedText);
+                    assertThat(result.path("ai_inference").findValuesAsString("text"))
+                            .as("каждый текст вывода должен встречаться ровно один раз")
+                            .containsOnlyOnce(unsupportedText)
+                            .containsOnlyOnce(existingInferenceText);
+                    assertThat(result.path("ai_inference").findValuesAsString("text"))
+                            .as("существующий вывод должен сохраниться")
+                            .contains(existingInferenceText);
+                    var existingInference =
+                            result.path("ai_inference").findParents("text").stream()
+                                    .filter(
+                                            inference ->
+                                                    inference
+                                                            .path("text")
+                                                            .asString()
+                                                            .equals(existingInferenceText))
+                                    .findFirst()
+                                    .orElseThrow();
+                    assertThat(existingInference.path("confidence").asString())
+                            .as("уверенность существующего вывода с подтверждённым основанием")
+                            .isEqualTo("high");
+                    assertThat(existingInference.path("based_on").get(0).asString())
+                            .as("основание существующего вывода")
+                            .isEqualTo(fragmentId.toString());
+                    var demoted =
+                            result.path("ai_inference").findParents("text").stream()
+                                    .filter(
+                                            inference ->
+                                                    inference
+                                                            .path("text")
+                                                            .asString()
+                                                            .equals(unsupportedText))
+                                    .findFirst()
+                                    .orElseThrow();
+                    assertThat(demoted.path("confidence").asString())
+                            .as("уверенность вывода без подтверждённых оснований")
+                            .isEqualTo("low");
+                    assertThat(demoted.path("based_on").isArray())
+                            .as("обоснование вывода представлено массивом")
+                            .isTrue();
+                    assertThat(demoted.path("based_on").isEmpty())
+                            .as("обоснование вывода без подтверждённых оснований")
+                            .isTrue();
+                });
     }
 
     /** Принимает позицию банка только по реальному материалу. */
