@@ -17,6 +17,14 @@ public class StubDocumentAnalyzer implements DocumentAnalyzer {
         return new Embedding("stub-v1", 8, true, List.of(1f, 0.5f, 0.25f, 0.125f, 0f, 0f, 0f, 0f));
     }
 
+    @Override
+    public EmbeddingComparison compareEmbeddings(java.util.Map<String, Object> request) {
+        List<Float> vector = List.of(1f, 0.5f, 0.25f, 0.125f, 0f, 0f, 0f, 0f);
+        int eventCount = ((List<?>) request.get("eventTexts")).size();
+        return new EmbeddingComparison("stub-v1", 8, true, vector,
+                java.util.Collections.nCopies(eventCount, vector));
+    }
+
     /**
      * Возвращает один помеченный тестовый фрагмент, ненулевой вектор и текст чанка.
      *

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException
+from pydantic import BaseModel
 from app.pdf import analyze_pdf
 
 app = FastAPI()
@@ -21,7 +22,6 @@ async def analyze(document_id: str, request: Request):
     result["documentId"] = document_id
     return result
 
-from pydantic import BaseModel
 from app.pdf import embed, MODE, _model
 
 
@@ -39,4 +39,27 @@ def embeddings(body: EmbeddingRequest):
         "embeddingDimension": len(vector),
         "stub": _model is None,
         "embedding": vector,
+    }
+
+
+class CompareEmbeddingsRequest(BaseModel):
+    companyText: str
+    eventTexts: list[str]
+
+
+@app.post("/embeddings/compare")
+def compare_embeddings(body: CompareEmbeddingsRequest):
+    if not body.companyText.strip() or not body.eventTexts or any(not text.strip() for text in body.eventTexts):
+        raise HTTPException(status_code=400, detail="Нужны текст компании и непустые тексты событий")
+    if len(body.eventTexts) > 100:
+        raise HTTPException(status_code=400, detail="Можно сравнить не более 100 событий")
+
+    vectors = embed([f"query: {body.companyText}", *(f"passage: {text}" for text in body.eventTexts)])
+    stub = _model is None
+    return {
+        "embeddingModel": "stub-v1" if stub else MODE,
+        "embeddingDimension": len(vectors[0]),
+        "stub": stub,
+        "companyEmbedding": vectors[0],
+        "eventEmbeddings": vectors[1:],
     }

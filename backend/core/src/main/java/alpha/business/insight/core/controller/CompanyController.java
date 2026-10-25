@@ -2,12 +2,15 @@ package alpha.business.insight.core.controller;
 
 import alpha.business.insight.core.dto.CompanyContext;
 import alpha.business.insight.core.dto.CompanyListItem;
+import alpha.business.insight.core.dto.DialogMessageDto;
+import alpha.business.insight.core.dto.EventCandidate;
 import alpha.business.insight.core.service.CompanyContextService;
 import alpha.business.insight.core.service.InsightService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import lombok.RequiredArgsConstructor;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
@@ -63,6 +66,23 @@ public class CompanyController {
     public Map<String, Object> generateInsight(@PathVariable String id, @PathVariable UUID eventId,
                                                Authentication user) {
         return insights.generate(id, eventId, user);
+    }
+
+    @GetMapping("/{id}/events/top")
+    @Operation(summary = "Три наиболее релевантных события для компании",
+            description = "Сопоставляет профиль компании с текстами готовых событий; результаты ML-заглушки ранжируются по лексическому совпадению.")
+    @ApiResponse(responseCode = "200", description = "До трёх событий по убыванию relevanceScore")
+    public List<EventCandidate> topEvents(@PathVariable String id, Authentication user) {
+        return insights.topCandidates(id, user);
+    }
+
+    @GetMapping("/{id}/events/{eventId}/messages")
+    @Operation(summary = "История сообщений персонального разбора")
+    @ApiResponse(responseCode = "200", description = "Сообщения в порядке создания")
+    @ApiResponse(responseCode = "404", description = "Событие или сохранённый разбор не найден")
+    public List<DialogMessageDto> messages(@PathVariable String id, @PathVariable UUID eventId,
+                                          Authentication user) {
+        return insights.messages(id, eventId, user);
     }
 
     @GetMapping("/{id}/events/{eventId}/insight")

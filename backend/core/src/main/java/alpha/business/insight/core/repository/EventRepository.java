@@ -21,6 +21,8 @@ import java.util.UUID;
  */
 @Repository
 public interface EventRepository extends JpaRepository<Event, UUID> {
+    Page<Event> findByStatusAndSourceType(EventStatus status, EventSourceType sourceType, Pageable pageable);
+
     @Query("""
             SELECT new alpha.business.insight.core.dto.EventListItem(
                 e.id, e.title, e.sourceType, e.status, e.createdAt)

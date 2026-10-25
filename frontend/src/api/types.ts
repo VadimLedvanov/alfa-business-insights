@@ -131,6 +131,8 @@ export interface Insight {
   sources: SourceRef[];
   trace_id: string;
   cost_rub?: number;
+  significance?: Significance;
+  significanceReason?: string | null;
 }
 
 // ---- Пагинация и списки (бэк отдаёт Spring Page) ----
@@ -162,6 +164,20 @@ export interface EventListItem {
   status: EventStatus;
   createdAt: string;
 }
+
+export interface TopEvent extends EventListItem {
+  relevanceScore: number;
+  insightGenerated: boolean;
+}
+
+export interface InsightMessage {
+  id: string;
+  role: string;
+  text: string;
+  createdAt: string;
+}
+
+export type Significance = 'SIGNIFICANT' | 'NOT_SIGNIFICANT' | 'UNKNOWN';
 
 // ---- Производные для интерфейса (не из бэка) ----
 

@@ -3,20 +3,27 @@ package alpha.business.insight.core.service;
 import alpha.business.insight.core.dto.InsightFragment;
 import alpha.business.insight.core.dto.EventReadDto;
 import alpha.business.insight.core.dto.CompanyContext;
+import alpha.business.insight.core.dto.DialogMessageDto;
+import alpha.business.insight.core.dto.EventCandidate;
 import alpha.business.insight.core.ml.DocumentAnalyzer;
 import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.ml.LlmClient;
 import alpha.business.insight.core.model.Event;
+import alpha.business.insight.core.model.EventStatus;
 import alpha.business.insight.core.model.EventSourceType;
 import alpha.business.insight.core.model.Insight;
+import alpha.business.insight.core.model.DialogMessage;
 import alpha.business.insight.core.model.KnowledgeDocument;
 import alpha.business.insight.core.repository.CompanyRepository;
 import alpha.business.insight.core.repository.DocumentRepository;
 import alpha.business.insight.core.repository.EventRepository;
+import alpha.business.insight.core.repository.DialogMessageRepository;
 import alpha.business.insight.core.repository.InsightRepository;
 import alpha.business.insight.core.repository.UserCompanyAccessRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,12 +42,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Генерирует инсайт и сохраняет результат для текущей версии материалов события. */
 @Service
 @RequiredArgsConstructor
 public class InsightService {
     private final InsightRepository insights;
+    private final DialogMessageRepository messages;
     private final CompanyRepository companies;
     private final EventRepository events;
     private final DocumentRepository documents;
@@ -51,6 +64,8 @@ public class InsightService {
     private final LlmClient llm;
     private final InsightValidator validator;
     private final ObjectMapper mapper;
+    private static final Set<String> STOP_WORDS = Set.of("test", "fixture", "для", "или", "это", "что", "при", "на", "по", "из", "в", "и", "с", "от", "до", "как", "может", "могут", "новые", "новый", "новая", "рост", "изменение", "изменения");
+    private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}]{3,}");
 
     @Transactional(readOnly = true)
     public Map<String, Object> get(String companyId, UUID eventId, Authentication user) {
@@ -69,7 +84,131 @@ public class InsightService {
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Событие не найдено"));
         Optional<Insight> cached = insights.findByCompanyIdAndEventIdAndMaterialsVersion(companyId, eventId,
                 event.getMaterialsVersion());
-        return cached.map(this::response).orElseGet(() -> response(analyze(companyId, event, UUID.randomUUID())));
+        if (cached.isPresent()) {
+            return response(cached.get());
+        }
+        Insight generated = analyze(companyId, event, UUID.randomUUID());
+        String significance = String.valueOf(generated.getPayload().get("significance"));
+        String reason = String.valueOf(generated.getPayload().get("significanceReason"));
+        String summary = "Инсайт сформирован для компании по событию «" + event.getTitle() + "».";
+        Object inferences = generated.getPayload().get("ai_inference");
+        if (inferences instanceof List<?> items && !items.isEmpty() && items.getFirst() instanceof Map<?, ?> item
+                && item.get("text") instanceof String text && !text.isBlank()) {
+            summary = text;
+        }
+        messages.saveAll(List.of(
+                DialogMessage.of(generated, "USER", "Сформировать инсайт по событию для компании."),
+                DialogMessage.of(generated, "ASSISTANT", summary + "\n\nЗначимость: " + significance + ". " + reason)));
+        return response(generated);
+    }
+
+    @Transactional(readOnly = true)
+    public List<EventCandidate> topCandidates(String companyId, Authentication user) {
+        authorize(companyId, user);
+        CompanyContext context = contexts.getContext(companyId);
+        List<Event> candidates = events.findByStatusAndSourceType(EventStatus.READY, EventSourceType.TEXT,
+                PageRequest.of(0, 100, Sort.by(Sort.Direction.DESC, "createdAt", "id"))).getContent();
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        Set<UUID> generated = new HashSet<>(insights.findGeneratedEventIds(companyId,
+                candidates.stream().map(Event::getId).toList()));
+        String companyText = companyText(context);
+        if (companyText.isBlank()) {
+            return candidates.stream().limit(3)
+                    .map(event -> new EventCandidate(event.getId(), event.getTitle(), event.getSourceType(),
+                            event.getStatus(), event.getCreatedAt(), 0, generated.contains(event.getId())))
+                    .toList();
+        }
+        DocumentAnalyzer.EmbeddingComparison comparison;
+        try {
+            comparison = analyzer.compare(companyText, candidates.stream().map(Event::getSourceRef).toList());
+        } catch (RuntimeException exception) {
+            if (exception instanceof ResponseStatusException status && status.getStatusCode().is4xxClientError()) {
+                throw status;
+            }
+            throw new ComponentUnavailableException("ML");
+        }
+        List<EventCandidate> ranked = new java.util.ArrayList<>(candidates.size());
+        for (int i = 0; i < candidates.size(); i++) {
+            double score = comparison.stub()
+                    ? lexicalScore(companyText, candidates.get(i).getSourceRef())
+                    : cosine(comparison.companyEmbedding(), comparison.eventEmbeddings().get(i));
+            Event event = candidates.get(i);
+            ranked.add(new EventCandidate(event.getId(), event.getTitle(), event.getSourceType(), event.getStatus(),
+                    event.getCreatedAt(), score, generated.contains(event.getId())));
+        }
+        return ranked.stream().sorted(Comparator.comparingDouble(EventCandidate::relevanceScore).reversed()
+                        .thenComparing(EventCandidate::createdAt, Comparator.reverseOrder())
+                        .thenComparing(EventCandidate::id))
+                .limit(3).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DialogMessageDto> messages(String companyId, UUID eventId, Authentication user) {
+        authorize(companyId, user);
+        Event event = events.findById(eventId).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Событие не найдено"));
+        Insight insight = insights.findByCompanyIdAndEventIdAndMaterialsVersion(companyId, eventId,
+                        event.getMaterialsVersion())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Сохранённый инсайт не найден"));
+        return messages.findByInsightIdOrderByCreatedAtAscIdAsc(insight.getId()).stream()
+                .map(DialogMessageDto::from).toList();
+    }
+
+    private static String companyText(CompanyContext context) {
+        var profile = context.profile();
+        List<String> details = new java.util.ArrayList<>();
+        for (String value : List.of(profile.mainIndustryCode() == null ? "" : profile.mainIndustryCode(),
+                profile.mainIndustryName() == null ? "" : profile.mainIndustryName(),
+                profile.organizationType() == null ? "" : profile.organizationType(),
+                profile.businessLifecycleStage() == null ? "" : profile.businessLifecycleStage(),
+                profile.region() == null ? "" : profile.region())) {
+            if (!value.toString().isBlank()) details.add(value.toString());
+        }
+        if (Boolean.TRUE.equals(profile.hasLoan())) details.add("кредит финансирование заём");
+        if (Boolean.TRUE.equals(profile.hasForeignTrade())) details.add("внешняя торговля импорт экспорт");
+        if (Boolean.TRUE.equals(profile.hasLeasing())) details.add("лизинг оборудование");
+        if (Boolean.TRUE.equals(profile.hasFactoring())) details.add("факторинг дебиторская задолженность");
+        if (Boolean.TRUE.equals(profile.hasBankGuarantee())) details.add("банковская гарантия контракт");
+        if (Boolean.TRUE.equals(profile.hasSettlementAccount())) details.add("расчётный счёт платежи РКО");
+        if (Boolean.TRUE.equals(profile.hasDeposit())) details.add("депозит вклад сбережения");
+        if (Boolean.TRUE.equals(profile.hasPayrollProject())) details.add("зарплатный проект зарплата");
+        context.counterparties().forEach(c -> {
+            if (c.mainIndustryName() != null) details.add(c.mainIndustryName());
+        });
+        return String.join(" ", details);
+    }
+
+    private static double lexicalScore(String companyText, String eventText) {
+        Set<String> companyWords = words(companyText);
+        Set<String> eventWords = words(eventText);
+        if (companyWords.isEmpty() || eventWords.isEmpty()) return 0;
+        Set<String> union = new HashSet<>(companyWords);
+        union.addAll(eventWords);
+        companyWords.retainAll(eventWords);
+        return (double) companyWords.size() / union.size();
+    }
+
+    private static Set<String> words(String text) {
+        var matcher = WORD.matcher(text.toLowerCase(Locale.ROOT));
+        Set<String> result = new HashSet<>();
+        while (matcher.find()) {
+            String word = matcher.group();
+            if (!STOP_WORDS.contains(word)) result.add(word);
+        }
+        return result;
+    }
+
+    private static double cosine(List<Float> left, List<Float> right) {
+        double dot = 0, leftNorm = 0, rightNorm = 0;
+        for (int i = 0; i < left.size(); i++) {
+            double a = left.get(i), b = right.get(i);
+            dot += a * b;
+            leftNorm += a * a;
+            rightNorm += b * b;
+        }
+        return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
     }
 
     private Insight analyze(String companyId, Event event, UUID traceId) {

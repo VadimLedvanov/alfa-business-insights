@@ -1,4 +1,4 @@
-import type { CompanyContext, CompanyListItem, DocumentMetadata, EventListItem, EventRead, Insight, Me, Page } from './types';
+import type { CompanyContext, CompanyListItem, DocumentMetadata, EventListItem, EventRead, Insight, InsightMessage, Me, Page, TopEvent } from './types';
 import { authHeader, kcLogout } from '../auth/keycloak';
 
 export class ApiError extends Error {
@@ -27,9 +27,11 @@ export const api = {
   companies: (page = 0) => json<Page<CompanyListItem>>(`/companies?page=${page}&size=20`),
   company: (id: string) => json<CompanyContext>(`/companies/${encodeURIComponent(id)}`),
   events: (page = 0, readyOnly = true) => json<Page<EventListItem>>(`/events?page=${page}&size=20${readyOnly ? '&status=READY' : ''}`),
+  topEvents: (companyId: string) => json<TopEvent[]>(`/companies/${encodeURIComponent(companyId)}/events/top`),
   event: (id: string) => json<EventRead>(`/events/${encodeURIComponent(id)}`),
   insight: (companyId: string, eventId: string) => json<Insight>(`/companies/${encodeURIComponent(companyId)}/events/${encodeURIComponent(eventId)}/insight`),
   generateInsight: (companyId: string, eventId: string) => json<Insight>(`/companies/${encodeURIComponent(companyId)}/events/${encodeURIComponent(eventId)}/insight`, { method: 'POST' }),
+  messages: (companyId: string, eventId: string) => json<InsightMessage[]>(`/companies/${encodeURIComponent(companyId)}/events/${encodeURIComponent(eventId)}/messages`),
   documents: (page = 0) => json<Page<DocumentMetadata>>(`/admin/documents?page=${page}&size=20`),
   document: (id: string) => json<DocumentMetadata>(`/documents/${encodeURIComponent(id)}`),
   documentFile: async (id: string) => (await request(`/documents/${encodeURIComponent(id)}/file`)).blob(),
