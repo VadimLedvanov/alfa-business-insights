@@ -127,8 +127,20 @@ public class InsightValidator {
             missingData.add("[ML STUB] Поиск использует синтетические фрагменты; они не подтверждают факты или позицию банка");
         }
         ArrayNode sources = result.putArray("sources");
+        Set<String> citedFragments = new LinkedHashSet<>();
+        for (String field : List.of("facts", "bank_view")) {
+            result.path(field).forEach(item -> {
+                String fragmentId = item.path("fragment_id").asString();
+                if (!fragmentId.isBlank()) citedFragments.add(fragmentId);
+            });
+        }
+        result.path("ai_inference").forEach(item -> item.path("based_on").forEach(reference -> {
+            if (reference.isString()) citedFragments.add(reference.asString());
+        }));
         for (InsightFragment fragment : fragments) {
-            sources.add(mapper.valueToTree(fragment.reference()));
+            if (citedFragments.contains(fragment.fragmentId().toString())) {
+                sources.add(mapper.valueToTree(fragment.reference()));
+            }
         }
         ArrayNode limitations = result.putArray("missing_data");
         missingData.forEach(limitations::add);

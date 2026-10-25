@@ -2,8 +2,8 @@ package alpha.business.insight.core.service;
 
 import alpha.business.insight.core.ml.DocumentAnalysis;
 import alpha.business.insight.core.ml.ComponentUnavailableException;
-import alpha.business.insight.core.ml.DocumentAnalyzer;
 import alpha.business.insight.core.dto.InsightFragment;
+import alpha.business.insight.core.ml.DocumentAnalyzer.Embedding;
 import io.qdrant.client.grpc.Points.SearchPoints;
 import io.qdrant.client.grpc.Points.WithPayloadSelector;
 import io.qdrant.client.QdrantClient;
@@ -52,12 +52,19 @@ public class DocumentVectorStore {
      * gRPC-клиент Qdrant; подтверждение его операций ожидается синхронно.
      */
     private final QdrantClient client;
+    private final float minScore;
 
     /**
      * Подключает клиент Qdrant, управляемый конфигурацией приложения.
      */
-    public DocumentVectorStore(QdrantClient client) {
+    public DocumentVectorStore(QdrantClient client,
+                               @org.springframework.beans.factory.annotation.Value("${qdrant.min-score:0.65}")
+                               float minScore) {
+        if (!Float.isFinite(minScore) || minScore < 0 || minScore > 1) {
+            throw new IllegalArgumentException("qdrant.min-score должен быть в диапазоне от 0 до 1");
+        }
         this.client = client;
+        this.minScore = minScore;
     }
 
     /**
@@ -125,7 +132,7 @@ public class DocumentVectorStore {
     }
 
     /** Ищет только в коллекции совместимой модели и размерности. */
-    public List<InsightFragment> search(DocumentAnalyzer.Embedding embedding) {
+    public List<InsightFragment> search(Embedding embedding) {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
         String collection = collectionName(embedding.embeddingModel(), embedding.embeddingDimension(), embedding.stub());
         if (!await(client.collectionExistsAsync(collection, remaining(deadline)), deadline)) {
@@ -135,7 +142,7 @@ public class DocumentVectorStore {
                 .addMust(matchKeyword("accessScope", "APPLICATION"))
                 .addMust(matchKeyword("embeddingModel", embedding.embeddingModel())).build();
         List<ScoredPoint> points = await(client.searchAsync(SearchPoints.newBuilder().setCollectionName(collection)
-                .addAllVector(embedding.embedding()).setLimit(5).setFilter(filter)
+                .addAllVector(embedding.embedding()).setLimit(5).setFilter(filter).setScoreThreshold(minScore)
                 .setWithPayload(WithPayloadSelector.newBuilder().setEnable(true)).build(), remaining(deadline)), deadline);
         return points.stream().map(point -> {
             Map<String, Value> payload = point.getPayloadMap();

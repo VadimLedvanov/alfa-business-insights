@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PDFDocumentLoadingTask, PDFPageProxy } from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { AppShell } from '../components/AppShell';
 import { CompanyProfileCard, LoadErr } from '../components/common';
 import { ProvenanceLabel, ImpactBadge, ConfidenceWord } from '../ui/Provenance';
@@ -8,7 +10,8 @@ import { useRouter } from '../app/router';
 import { useCompanyContext } from '../lib/useData';
 import { api, ApiError } from '../api/client';
 import { deriveTile } from '../lib/derive';
-import type { EventRead, Insight, InsightMessage, Significance, SourceRef } from '../api/types';
+import type { CompanyContext, EventRead, Insight, InsightMessage, Significance, SourceRef } from '../api/types';
+import { money, revenueLabel, sharePct } from '../lib/format';
 import './InsightPage.css';
 
 export function InsightPage({ eventId }: { eventId: string }) {
@@ -23,7 +26,7 @@ export function InsightPage({ eventId }: { eventId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
-  const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
+  const [preview, setPreview] = useState<{ name: string; url: string; blob: Blob; page: number } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -71,9 +74,8 @@ export function InsightPage({ eventId }: { eventId: string }) {
     if (!source.document_id) return;
     try {
       const metadata = await api.document(source.document_id);
-      const blob = await api.documentFile(source.document_id);
-      const url = URL.createObjectURL(blob);
-      setPreview({ name: metadata.fileName, url: source.page ? `${url}#page=${source.page}` : url });
+      const file = await api.documentFile(source.document_id);
+      setPreview({ name: metadata.fileName, blob: file, url: URL.createObjectURL(file), page: source.page || 1 });
     } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось открыть PDF-источник.'); }
   };
 
@@ -101,6 +103,7 @@ export function InsightPage({ eventId }: { eventId: string }) {
         </div> : <div className="insight-layout">
           <div className="insight-main">
             <EventMaterial event={event} />
+            <EventFactPreview event={event} ctx={context.data} />
             <section id="event-analysis" className="panel insight-status">
               <div className="eyebrow">РАЗБОР ДЛЯ КОМПАНИИ</div>
               <h2>{event.status === 'FAILED' ? 'Разбор не сформирован' : 'Инсайд по этому событию ещё не создан'}</h2>
@@ -112,8 +115,47 @@ export function InsightPage({ eventId }: { eventId: string }) {
         </div>}
       </>}
     </LoadErr>
-    {preview && <div className="pdf-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setPreview(null); }}><section className="pdf-dialog" role="dialog" aria-modal="true" aria-label={`Просмотр ${preview.name}`}><header><strong>{preview.name}</strong><button className="button button--small" onClick={() => setPreview(null)}>Закрыть</button></header><iframe title={preview.name} src={preview.url} /></section></div>}
+    {preview && <div className="pdf-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setPreview(null); }}><section className="pdf-dialog" role="dialog" aria-modal="true" aria-label={`Просмотр ${preview.name}`}><header><strong>{preview.name}</strong><div><a className="button button--small" href={preview.url} download={preview.name}>Скачать PDF</a><button className="button button--small" onClick={() => setPreview(null)}>Закрыть</button></div></header><PdfViewer blob={preview.blob} initialPage={preview.page} /></section></div>}
   </AppShell>;
+}
+
+function EventFactPreview({ event, ctx }: { event: EventRead; ctx: CompanyContext }) {
+  const { profile } = ctx;
+  const facts: string[] = [];
+  if (event.sourceRef?.trim()) facts.push(event.sourceRef.trim());
+
+  const industry = [profile.mainIndustryCode, profile.mainIndustryName].filter(Boolean).join(' ');
+  const location = profile.region || profile.city;
+  const companyDetails = [
+    industry && `работает в отрасли ${industry}`,
+    location && `зарегистрирована в ${location}`,
+    profile.revenue != null && profile.revenue !== 1000 && `выручка около ${revenueLabel(profile.revenue)}`,
+  ].filter(Boolean);
+  const employees = [
+    profile.employeeCountRangeFns && `ФНС: ${profile.employeeCountRangeFns}`,
+    profile.employeeCountRangeSpark && `СПАРК: ${profile.employeeCountRangeSpark}`,
+  ].filter(Boolean);
+  if (employees.length) companyDetails.push(`штат ${employees.join(', ')}`);
+  if (companyDetails.length) facts.push(`Компания ${companyDetails.join(', ')}.`);
+
+  const counterparty = ctx.counterparties[0];
+  if (counterparty) {
+    const counterpartyName = [counterparty.mainIndustryCode, counterparty.mainIndustryName].filter(Boolean).join(' ');
+    const paymentDetails = [
+      counterparty.outgoingPaymentAmount != null && `исходящие платежи ${money(counterparty.outgoingPaymentAmount)}`,
+      counterparty.paymentShare != null && `доля ${sharePct(counterparty.paymentShare)} от оборота`,
+    ].filter(Boolean);
+    if (counterpartyName || paymentDetails.length) {
+      facts.push(`Крупнейший контрагент${counterpartyName ? ` — ${counterpartyName}` : ''}${paymentDetails.length ? `: ${paymentDetails.join(', ')}` : ''}.`);
+    }
+  }
+
+  if (!facts.length) return null;
+  return <section className="panel event-fact-preview">
+    <div className="eyebrow">ФАКТ · КОНТЕКСТ КОМПАНИИ</div>
+    <h2>Что произошло</h2>
+    <div className="event-fact-preview__facts">{facts.map((fact, index) => <p key={index}>{fact}</p>)}</div>
+  </section>;
 }
 
 function EventMaterial({ event }: { event: EventRead }) {
@@ -124,6 +166,66 @@ function EventMaterial({ event }: { event: EventRead }) {
       ? <a className="event-material__link" href={event.sourceRef} target="_blank" rel="noreferrer">{event.sourceRef}</a>
       : <p>{event.sourceRef || 'Исходный материал не указан.'}</p>}
   </section>;
+}
+
+function PdfViewer({ blob, initialPage }: { blob: Blob; initialPage: number }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [pageNumber, setPageNumber] = useState(initialPage);
+  const [pageCount, setPageCount] = useState(0);
+  const [status, setStatus] = useState('Загружаем PDF…');
+
+  useEffect(() => {
+    let active = true;
+    let renderTask: ReturnType<PDFPageProxy['render']> | null = null;
+    let loadingTask: PDFDocumentLoadingTask | null = null;
+    setStatus('Загружаем PDF…');
+    setPageCount(0);
+    void import('pdfjs-dist').then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = `${pdfWorkerUrl}?v=2`;
+      return blob.arrayBuffer().then((data) => {
+      if (!active) return;
+      loadingTask = pdfjs.getDocument({ data: new Uint8Array(data) });
+      return loadingTask.promise.then(async (document) => {
+        if (!active) return;
+        const page = Math.min(Math.max(pageNumber, 1), document.numPages);
+        setPageNumber(page);
+        setPageCount(document.numPages);
+        const pdfPage = await document.getPage(page);
+        const base = pdfPage.getViewport({ scale: 1 });
+        const scale = Math.min((canvas.current?.parentElement?.clientWidth ?? base.width) / base.width, 1.5);
+        const viewport = pdfPage.getViewport({ scale });
+        const element = canvas.current;
+        const context = element?.getContext('2d');
+        if (!active || !element || !context) return;
+        element.width = Math.ceil(viewport.width);
+        element.height = Math.ceil(viewport.height);
+        renderTask = pdfPage.render({ canvas: element, canvasContext: context, viewport });
+        await renderTask.promise;
+        if (active) setStatus('');
+      });
+      });
+    }).catch((error: unknown) => {
+      if (!active) return;
+      console.error('PDF preview failed', error);
+      setStatus(`Не удалось отобразить PDF: ${error instanceof Error ? error.message : String(error)}`);
+    });
+
+    return () => {
+      active = false;
+      renderTask?.cancel();
+      if (loadingTask) void loadingTask.destroy();
+    };
+  }, [blob, pageNumber]);
+
+  return <div className="pdf-viewer">
+    <div className="pdf-viewer__toolbar">
+      <button className="button button--small" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => page - 1)}>← Предыдущая</button>
+      <span>{pageCount ? `${Math.min(pageNumber, pageCount)} / ${pageCount}` : status}</span>
+      <button className="button button--small" disabled={!pageCount || pageNumber >= pageCount} onClick={() => setPageNumber((page) => page + 1)}>Следующая →</button>
+    </div>
+    {status && pageCount > 0 && <p className="pdf-viewer__status">{status}</p>}
+    <canvas ref={canvas} className="pdf-viewer__canvas" aria-label={`Страница PDF ${pageNumber}`} />
+  </div>;
 }
 
 function InsightContent({ insight, onSource }: { insight: Insight; onSource: (source: SourceRef) => void }) {

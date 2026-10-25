@@ -12,6 +12,7 @@
     "@alfalab/core-components": "50.38.0",
     "@alfalab/core-components-vars": "11.4.1",
     "@alfalab/icons-glyph": "2.293.3",
+    "pdfjs-dist": "^6.4.299",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

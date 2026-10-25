@@ -320,6 +320,28 @@ public class InsightService {
 
     private Map<String, Object> response(Insight insight) {
         Map<String, Object> result = new LinkedHashMap<>(insight.getPayload());
+        Set<String> citedFragments = new HashSet<>();
+        for (String field : List.of("facts", "bank_view")) {
+            if (result.get(field) instanceof List<?> items) {
+                for (Object item : items) {
+                    if (item instanceof Map<?, ?> fragment && fragment.get("fragment_id") instanceof String id) {
+                        citedFragments.add(id);
+                    }
+                }
+            }
+        }
+        if (result.get("ai_inference") instanceof List<?> inferences) {
+            for (Object inference : inferences) {
+                if (inference instanceof Map<?, ?> item && item.get("based_on") instanceof List<?> references) {
+                    references.stream().filter(String.class::isInstance).map(String.class::cast)
+                            .forEach(citedFragments::add);
+                }
+            }
+        }
+        if (result.get("sources") instanceof List<?> sources) {
+            result.put("sources", sources.stream().filter(source -> source instanceof Map<?, ?> reference
+                    && reference.get("fragment_id") instanceof String id && citedFragments.contains(id)).toList());
+        }
         result.put("id", insight.getId());
         result.put("materials_version", insight.getMaterialsVersion());
         result.put("cost_rub", insight.getCostRub());
