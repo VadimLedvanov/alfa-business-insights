@@ -39,6 +39,31 @@ public final class BackendClient {
                 });
     }
 
+    /** Выполняет JSON POST-запрос к backend и сохраняет тело и ответ в Allure. */
+    public Response postJson(String path, String bearer, String body) {
+        URI uri = URI.create(baseUri + path);
+        Map<String, String> headers =
+                bearer == null
+                        ? Map.of("Content-Type", "application/json")
+                        : Map.of(
+                                "Authorization",
+                                "Bearer " + bearer,
+                                "Content-Type",
+                                "application/json");
+        return Allure.step(
+                "POST " + uri.getPath(),
+                () -> {
+                    String requestEvidence = attachRequest("POST", uri, headers, body);
+                    Allure.addAttachment(
+                            "HTTP request JSON body",
+                            "application/json",
+                            HttpEvidence.redact(body));
+                    Response response = request(uri, headers).body(body).when().post();
+                    attachResponse(requestEvidence, response);
+                    return response;
+                });
+    }
+
     /** Загружает синтетический PDF через multipart-поля, сформированные Rest Assured. */
     public Response postMultipart(String path, SyntheticPdf.MultipartUpload upload, String bearer) {
         URI uri = URI.create(baseUri + path);
