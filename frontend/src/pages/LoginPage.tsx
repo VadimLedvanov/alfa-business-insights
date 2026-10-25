@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Button } from '@alfalab/core-components/button';
 import { AlfaLogo } from '../ui/Logo';
 import { UsersMIcon, BriefcaseGearMIcon, ArrowRightMIcon } from '../ui/icons';
@@ -21,12 +22,21 @@ const ROLES = [
 ];
 
 export function LoginPage() {
-  const { signInStub } = useAuth();
+  const { signIn } = useAuth();
   const { navigate } = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const pick = (key: string) => {
-    signInStub(key);
-    navigate(key === 'sysadmin' ? '/sources' : '/companies');
+  const pick = async (key: string) => {
+    setBusy(key);
+    setError(null);
+    try {
+      await signIn(key);
+      navigate(key === 'sysadmin' ? '/sources' : '/companies');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось войти. Попробуйте ещё раз.');
+      setBusy(null);
+    }
   };
 
   return (
@@ -48,13 +58,15 @@ export function LoginPage() {
           Пользователи заведены в Keycloak, в бою вход идёт через него.
         </p>
 
+        {error && <div className="login__error" role="alert">{error}</div>}
+
         <div className="login__roles">
           {ROLES.map(({ key, title, sub, Icon }) => (
-            <button key={key} className="role" onClick={() => pick(key)}>
+            <button key={key} className="role" onClick={() => pick(key)} disabled={!!busy} aria-busy={busy === key}>
               <span className="role__icon"><Icon width={24} height={24} color="var(--color-light-graphic-primary)" /></span>
               <span className="role__text">
                 <span className="role__title">{title}</span>
-                <span className="role__sub">{sub}</span>
+                <span className="role__sub">{busy === key ? 'Входим…' : sub}</span>
               </span>
               <ArrowRightMIcon width={20} height={20} color="var(--color-light-graphic-secondary)" />
             </button>
@@ -62,7 +74,7 @@ export function LoginPage() {
         </div>
 
         <div className="login__foot">
-          <Button view="text" size={40} onClick={() => pick('director')}>
+          <Button view="text" size={40} onClick={() => pick('director')} loading={busy === 'director'} disabled={!!busy}>
             Войти как Андрей
           </Button>
         </div>

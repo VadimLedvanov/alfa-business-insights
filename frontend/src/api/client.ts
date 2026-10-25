@@ -6,6 +6,7 @@
 import type { CompanyContext, CompanyListItem, EventListItem, EventRead, Insight, Me, Page } from './types';
 import { DEMO_COMPANIES, DEMO_COMPANY_IDS, DEMO_EVENTS, DEMO_USERS, stubInsight, userEvent, userInsight } from './stubs';
 import { getMaterialByEvent, readyMaterials } from './sessionStore';
+import { authHeader } from '../auth/keycloak';
 
 const MODE = (import.meta.env.VITE_API_MODE as string) ?? 'stub';
 export const IS_STUB = MODE !== 'live';
@@ -13,13 +14,13 @@ export const IS_STUB = MODE !== 'live';
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { headers: { Accept: 'application/json' }, credentials: 'include' });
+  const res = await fetch(`/api${path}`, { headers: { Accept: 'application/json', ...authHeader() } });
   if (!res.ok) throw new ApiError(res.status, `GET ${path} → ${res.status}`);
   return (await res.json()) as T;
 }
 
 async function post<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { method: 'POST', headers: { Accept: 'application/json' }, credentials: 'include' });
+  const res = await fetch(`/api${path}`, { method: 'POST', headers: { Accept: 'application/json', ...authHeader() } });
   if (!res.ok) throw new ApiError(res.status, `POST ${path} → ${res.status}`);
   return (await res.json()) as T;
 }

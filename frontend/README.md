@@ -35,8 +35,11 @@ npm run preview  # предпросмотр сборки
 режима не меняет экраны. Подключены живые ручки: `GET /api/companies` и `GET /api/events`
 (Spring `Page`), `GET /api/companies/{id}`, `GET|POST /api/companies/{id}/events/{eventId}/insight`.
 
-**Осталось для полного live:** вход через Keycloak и передача Bearer-токена в запросы —
-эндпоинты бэка защищены. До этого демо работает в режиме `stub`.
+**Вход через Keycloak подключён.** В live-режиме кнопки «Андрей / Администратор» входят через
+Keycloak (grant_type=password, публичный клиент `alfa-backend`, тестовые пользователи `director`
+/ `sysadmin` с сид-паролями из realm-экспорта), получают Bearer-токен и обращаются к `/api` с ним.
+Запускать live только за nginx из `docker-compose` (он проксирует `/auth` на Keycloak и `/api`
+на backend): собрать фронт с `VITE_API_MODE=live`. По умолчанию — режим `stub` (работает без бэка).
 
 ## Структура
 

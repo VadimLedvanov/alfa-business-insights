@@ -30,7 +30,14 @@
 .login__title { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.4px; margin: 18px 0 8px; }
 .login__lead { font-size: 14px; line-height: 20px; color: var(--color-light-text-secondary); margin: 0 0 22px; }
 
+.login__error {
+  padding: 12px 14px; border-radius: 10px; margin-bottom: 14px;
+  background: var(--radar-impact-high-bg); color: var(--radar-impact-high-text);
+  font-size: 13px; line-height: 18px;
+}
+
 .login__roles { display: flex; flex-direction: column; gap: 12px; }
+.role:disabled { opacity: 0.6; cursor: progress; }
 .role {
   display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
   padding: 16px; border: 1px solid var(--color-light-border-secondary); border-radius: 16px;

@@ -1,10 +1,12 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { Me, Role } from '../api/types';
 import { IS_STUB, api, stubUser } from '../api/client';
+import { kcLogin, kcLogout } from './keycloak';
 
 interface AuthState {
   me: Me | null;
-  signInStub: (userKey: string) => void;
+  /** Вход тестового пользователя: stub — сразу, live — через Keycloak + /auth/me. */
+  signIn: (userKey: string) => Promise<void>;
   signOut: () => void;
   isAdmin: boolean;
 }
@@ -23,28 +25,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  // В live-режиме можно будет подтянуть реального пользователя через Keycloak + /auth/me.
-  void api;
-  void IS_STUB;
-
   const value = useMemo<AuthState>(() => {
     const persist = (u: Me | null) => {
       try {
         if (u) sessionStorage.setItem(KEY, JSON.stringify(u));
         else sessionStorage.removeItem(KEY);
       } catch {
-        /* приватный режим браузера — не критично */
+        /* приватный режим браузера */
       }
     };
     return {
       me,
       isAdmin: !!me?.roles.includes('SYSTEM_ADMIN' as Role),
-      signInStub: (userKey: string) => {
-        const u = stubUser(userKey) ?? null;
+      signIn: async (userKey: string) => {
+        if (IS_STUB) {
+          const u = stubUser(userKey) ?? null;
+          setMe(u);
+          persist(u);
+          return;
+        }
+        await kcLogin(userKey);
+        const u = await api.me();
         setMe(u);
         persist(u);
       },
       signOut: () => {
+        kcLogout();
         setMe(null);
         persist(null);
       },
