@@ -68,6 +68,29 @@ a.source-card:hover { border-color: var(--color-light-border-primary); }
 .influence__node small { display: block; font-size: 11px; letter-spacing: 0.4px; color: var(--color-light-text-secondary); margin-bottom: 3px; }
 .influence__node--current { background: var(--radar-prov-ai-bg); border-color: var(--radar-prov-ai-bg); }
 
+.scope { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.scope__label { font-size: 13px; color: var(--color-light-text-secondary); }
+.scope__switch { display: inline-flex; background: var(--color-light-neutral-translucent-200); border-radius: 10px; padding: 3px; gap: 2px; }
+.scope__btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border: 0; border-radius: 8px;
+  background: transparent; font-size: 14px; font-weight: 500; color: var(--color-light-text-secondary); cursor: pointer;
+}
+.scope__btn--active { background: var(--color-light-bg-primary); color: var(--color-light-text-primary); box-shadow: var(--shadow-xs); }
+.scope__btn:disabled { color: var(--color-light-text-tertiary); cursor: not-allowed; }
+.scope__note { font-size: 12px; color: var(--color-light-text-secondary); }
+
+.feedback { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.feedback > span { font-size: 14px; }
+.feedback__btns { display: flex; gap: 8px; }
+.feedback__btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px;
+  border: 1px solid var(--color-light-border-primary); background: var(--color-light-bg-primary);
+  font-size: 14px; font-weight: 500; color: var(--color-light-text-primary); cursor: pointer;
+}
+.feedback__btn:hover { border-color: var(--color-light-neutral-translucent-500); }
+.feedback__btn--on { background: var(--radar-opportunity-bg); border-color: var(--radar-opportunity-bg); color: var(--radar-opportunity-text); }
+.feedback__thanks { font-size: 13px; color: var(--color-light-text-secondary); }
+
 @media (max-width: 1100px) {
   .insight-layout { grid-template-columns: 1fr; }
   .split { grid-template-columns: 1fr; }

@@ -51,3 +51,5 @@ export { PencilMIcon } from '@alfalab/icons-glyph/PencilMIcon';
 export { CopyMIcon } from '@alfalab/icons-glyph/CopyMIcon';
 export { PinLocationMIcon } from '@alfalab/icons-glyph/PinLocationMIcon';
 export { CrossMIcon } from '@alfalab/icons-glyph/CrossMIcon';
+export { ThumbUpMIcon } from '@alfalab/icons-glyph/ThumbUpMIcon';
+export { ThumbDownMIcon } from '@alfalab/icons-glyph/ThumbDownMIcon';
