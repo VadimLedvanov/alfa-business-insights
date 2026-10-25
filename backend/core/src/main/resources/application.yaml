@@ -57,6 +57,7 @@ spring:
 qdrant:
   host: ${QDRANT_HOST:localhost}
   grpc-port: ${QDRANT_GRPC_PORT:6334}
+  min-score: ${QDRANT_MIN_SCORE:0.65}
 
 company-context:
   top-counterparties: ${COMPANY_CONTEXT_TOP_COUNTERPARTIES:5}
