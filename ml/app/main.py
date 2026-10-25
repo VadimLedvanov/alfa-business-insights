@@ -33,7 +33,7 @@ class EmbeddingRequest(BaseModel):
 def embeddings(body: EmbeddingRequest):
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="Пустой текст")
-    vector = embed([body.text])[0]
+    vector = embed([f"query: {body.text}"])[0]
     return {
         "embeddingModel": "stub-v1" if _model is None else MODE,
         "embeddingDimension": len(vector),

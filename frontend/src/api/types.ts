@@ -167,3 +167,18 @@ export interface EventListItem {
 
 /** Значимость события для компании — вычисляется фронтом по контексту и инсайту. */
 export type ImpactLevel = 'high' | 'medium' | 'indirect' | 'opportunity';
+
+export interface DocumentMetadata {
+  documentId: string;
+  title: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  uploadedAt: string;
+  publicationDate: string | null;
+  chunkCount: number;
+  schemaVersion: number;
+  embeddingModel: string;
+  embeddingDimension: number;
+  stub: boolean;
+}

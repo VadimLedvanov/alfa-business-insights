@@ -1,20 +1,29 @@
 import os
 import fitz
 
-MODE = os.getenv("ML_EMBEDDING_MODEL") or "stub"
+MODE = os.getenv("ML_EMBEDDER") or os.getenv("ML_EMBEDDING_MODEL") or "stub"
 MAX_WORDS = 250
 
 _model = None
 if MODE != "stub":
-    from sentence_transformers import SentenceTransformer
-    _model = SentenceTransformer(MODE)
+    from fastembed import TextEmbedding
+    if MODE == "intfloat/multilingual-e5-small":
+        from fastembed.common.model_description import ModelSource, PoolingType
+        TextEmbedding.add_custom_model(
+            model=MODE,
+            pooling=PoolingType.MEAN,
+            normalization=True,
+            sources=ModelSource(hf=MODE),
+            dim=384,
+            model_file="onnx/model.onnx",
+        )
+    _model = TextEmbedding(model_name=MODE)
 
 
 def embed(texts: list[str]) -> list[list[float]]:
     if _model is None:
         return [[1.0, 0.5, 0.25, 0.125, 0.0, 0.0, 0.0, 0.0] for _ in texts]
-    vectors = _model.encode(texts, normalize_embeddings=True)
-    return vectors.astype("float32").tolist()
+    return [vector.tolist() for vector in _model.embed(texts)]
 
 
 def split_into_chunks(text: str, max_words: int = MAX_WORDS) -> list[str]:
@@ -40,7 +49,7 @@ def analyze_pdf(data: bytes) -> dict:
     if not chunks:
         raise ValueError("В PDF нет текста")
 
-    vectors = embed([c["text"] for c in chunks])
+    vectors = embed([f"passage: {c['text']}" for c in chunks])
     for chunk, vector in zip(chunks, vectors):
         chunk["embedding"] = vector
 

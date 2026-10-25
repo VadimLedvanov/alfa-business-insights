@@ -1,67 +1,42 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import type { Me, Role } from '../api/types';
-import { IS_STUB, api, stubUser } from '../api/client';
-import { kcLogin, kcLogout } from './keycloak';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import type { Me } from '../api/types';
+import { api } from '../api/client';
+import { hasToken, kcLogin, kcLogout } from './keycloak';
 
 interface AuthState {
   me: Me | null;
-  /** Вход тестового пользователя: stub — сразу, live — через Keycloak + /auth/me. */
-  signIn: (userKey: string) => Promise<void>;
+  loading: boolean;
+  signIn: (username: string, password: string) => Promise<void>;
   signOut: () => void;
   isAdmin: boolean;
 }
-
 const AuthContext = createContext<AuthState | null>(null);
 
-const KEY = 'abi.auth.user';
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [me, setMe] = useState<Me | null>(() => {
-    try {
-      const raw = sessionStorage.getItem(KEY);
-      return raw ? (JSON.parse(raw) as Me) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const value = useMemo<AuthState>(() => {
-    const persist = (u: Me | null) => {
-      try {
-        if (u) sessionStorage.setItem(KEY, JSON.stringify(u));
-        else sessionStorage.removeItem(KEY);
-      } catch {
-        /* приватный режим браузера */
-      }
-    };
-    return {
-      me,
-      isAdmin: !!me?.roles.includes('SYSTEM_ADMIN' as Role),
-      signIn: async (userKey: string) => {
-        if (IS_STUB) {
-          const u = stubUser(userKey) ?? null;
-          setMe(u);
-          persist(u);
-          return;
-        }
-        await kcLogin(userKey);
-        const u = await api.me();
-        setMe(u);
-        persist(u);
-      },
-      signOut: () => {
-        kcLogout();
-        setMe(null);
-        persist(null);
-      },
-    };
-  }, [me]);
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  const [me, setMe] = useState<Me | null>(null);
+  const [loading, setLoading] = useState(hasToken);
+  const signOut = () => {
+    kcLogout(); setMe(null);
+    try { sessionStorage.removeItem('abi.auth.user'); } catch { /* Old demo session. */ }
+    try { sessionStorage.removeItem('abi.company'); } catch { /* Storage may be disabled. */ }
+    window.dispatchEvent(new Event('abi:identity-changed'));
+  };
+  useEffect(() => {
+    let alive = true;
+    const expired = () => { if (alive) signOut(); };
+    window.addEventListener('abi:unauthorized', expired);
+    if (hasToken()) api.me().then((user) => { if (alive) setMe(user); }).catch(expired).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; window.removeEventListener('abi:unauthorized', expired); };
+  }, []);
+  const signIn = async (username: string, password: string) => {
+    signOut();
+    try { await kcLogin(username, password); setMe(await api.me()); }
+    catch (error) { signOut(); throw error; }
+  };
+  return <AuthContext.Provider value={{ me, loading, signIn, signOut, isAdmin: !!me?.roles.includes('SYSTEM_ADMIN') }}>{children}</AuthContext.Provider>;
 }
-
-export function useAuth(): AuthState {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth вне AuthProvider');
-  return ctx;
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('AuthProvider required');
+  return context;
 }

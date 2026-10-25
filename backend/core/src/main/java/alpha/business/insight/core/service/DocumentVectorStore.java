@@ -2,6 +2,7 @@ package alpha.business.insight.core.service;
 
 import alpha.business.insight.core.ml.DocumentAnalysis;
 import alpha.business.insight.core.ml.ComponentUnavailableException;
+import alpha.business.insight.core.ml.DocumentAnalyzer;
 import alpha.business.insight.core.dto.InsightFragment;
 import io.qdrant.client.grpc.Points.SearchPoints;
 import io.qdrant.client.grpc.Points.WithPayloadSelector;
@@ -24,6 +25,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -65,12 +67,13 @@ public class DocumentVectorStore {
      * @throws ResponseStatusException при несовместимой модели, ошибке Qdrant или истечении времени
      */
     public void index(DocumentAnalysis analysis, LocalDate publicationDate, long deadline) {
-        if (!analysis.stub() || !analysis.embeddingModel().equals("stub-v1") || analysis.embeddingDimension() != 8) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Для этой версии настроена только изолированная коллекция stub-v1");
+        if (analysis.embeddingModel() == null || analysis.embeddingDimension() < 1
+                || (analysis.stub() && (!analysis.embeddingModel().equals("stub-v1") || analysis.embeddingDimension() != 8))) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Некорректные метаданные embedder в анализе PDF");
         }
         deadline = Math.min(deadline, System.nanoTime() + Duration.ofSeconds(5).toNanos());
-        ensureCollection(deadline);
+        String collection = collectionName(analysis.embeddingModel(), analysis.embeddingDimension(), analysis.stub());
+        ensureCollection(collection, analysis.embeddingDimension(), deadline);
         List<PointStruct> points = analysis.chunks().stream().map(chunk -> {
             PointStruct.Builder point = PointStruct.newBuilder()
                     .setId(id(chunkId(analysis.documentId(), chunk.ordinal())))
@@ -88,7 +91,7 @@ public class DocumentVectorStore {
             }
             return point.build();
         }).toList();
-        UpdateResult result = await(client.upsertAsync(STUB_COLLECTION, points, remaining(deadline)), deadline);
+        UpdateResult result = await(client.upsertAsync(collection, points, remaining(deadline)), deadline);
         if (result.getStatus() != UpdateStatus.Completed) {
             throw new ComponentUnavailableException("Qdrant");
         }
@@ -105,17 +108,26 @@ public class DocumentVectorStore {
         return UUID.nameUUIDFromBytes((documentId + ":" + ordinal).getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Ищет до пяти фрагментов stub-v1; отсутствующая коллекция означает пустую базу знаний. */
-    public List<InsightFragment> search(List<Float> embedding) {
+    /** Имя коллекции стабильно для каждой модели и размерности; stub сохраняет legacy имя. */
+    public static String collectionName(String model, int dimension, boolean stub) {
+        if (stub && "stub-v1".equals(model) && dimension == 8) return STUB_COLLECTION;
+        String safeModel = model.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_").replaceAll("^_|_$", "");
+        if (safeModel.isBlank() || dimension < 1) throw new IllegalArgumentException("Invalid embedding collection metadata");
+        return "knowledge_documents_" + safeModel + "_" + dimension;
+    }
+
+    /** Ищет только в коллекции совместимой модели и размерности. */
+    public List<InsightFragment> search(DocumentAnalyzer.Embedding embedding) {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-        if (!await(client.collectionExistsAsync(STUB_COLLECTION, remaining(deadline)), deadline)) {
+        String collection = collectionName(embedding.embeddingModel(), embedding.embeddingDimension(), embedding.stub());
+        if (!await(client.collectionExistsAsync(collection, remaining(deadline)), deadline)) {
             return List.of();
         }
         Filter filter = Filter.newBuilder()
                 .addMust(matchKeyword("accessScope", "APPLICATION"))
-                .addMust(matchKeyword("embeddingModel", "stub-v1")).build();
-        List<ScoredPoint> points = await(client.searchAsync(SearchPoints.newBuilder().setCollectionName(STUB_COLLECTION)
-                .addAllVector(embedding).setLimit(5).setFilter(filter)
+                .addMust(matchKeyword("embeddingModel", embedding.embeddingModel())).build();
+        List<ScoredPoint> points = await(client.searchAsync(SearchPoints.newBuilder().setCollectionName(collection)
+                .addAllVector(embedding.embedding()).setLimit(5).setFilter(filter)
                 .setWithPayload(WithPayloadSelector.newBuilder().setEnable(true)).build(), remaining(deadline)), deadline);
         return points.stream().map(point -> {
             Map<String, Value> payload = point.getPayloadMap();
@@ -134,22 +146,22 @@ public class DocumentVectorStore {
     /**
      * Создаёт коллекцию при первом обращении и проверяет размерность и метрику без пересоздания.
      */
-    private void ensureCollection(long deadline) {
-        if (!await(client.collectionExistsAsync(STUB_COLLECTION, remaining(deadline)), deadline)) {
+    private void ensureCollection(String collection, int dimension, long deadline) {
+        if (!await(client.collectionExistsAsync(collection, remaining(deadline)), deadline)) {
             try {
-                await(client.createCollectionAsync(STUB_COLLECTION,
-                        VectorParams.newBuilder().setSize(8).setDistance(Distance.Cosine).build(),
+                await(client.createCollectionAsync(collection,
+                        VectorParams.newBuilder().setSize(dimension).setDistance(Distance.Cosine).build(),
                         remaining(deadline)), deadline);
             } catch (ResponseStatusException exception) {
                 // Другой запрос или экземпляр приложения мог одновременно создать коллекцию.
-                if (!await(client.collectionExistsAsync(STUB_COLLECTION, remaining(deadline)), deadline)) {
+                if (!await(client.collectionExistsAsync(collection, remaining(deadline)), deadline)) {
                     throw exception;
                 }
             }
         }
-        VectorParams params = await(client.getCollectionInfoAsync(STUB_COLLECTION, remaining(deadline)), deadline)
+        VectorParams params = await(client.getCollectionInfoAsync(collection, remaining(deadline)), deadline)
                 .getConfig().getParams().getVectorsConfig().getParams();
-        if (params.getSize() != 8 || params.getDistance() != Distance.Cosine) {
+        if (params.getSize() != dimension || params.getDistance() != Distance.Cosine) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Несовместимая конфигурация коллекции Qdrant");
         }
     }
@@ -160,13 +172,14 @@ public class DocumentVectorStore {
      * @param documentId идентификатор загрузки
      * @throws ResponseStatusException если Qdrant не подтвердил очистку
      */
-    public void delete(UUID documentId) {
+    public void delete(UUID documentId, String model, int dimension, boolean stub) {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-        if (!await(client.collectionExistsAsync(STUB_COLLECTION, remaining(deadline)), deadline)) {
+        String collection = collectionName(model, dimension, stub);
+        if (!await(client.collectionExistsAsync(collection, remaining(deadline)), deadline)) {
             return;
         }
         Filter filter = Filter.newBuilder().addMust(matchKeyword("documentId", documentId.toString())).build();
-        UpdateResult result = await(client.deleteAsync(STUB_COLLECTION, filter, remaining(deadline)), deadline);
+        UpdateResult result = await(client.deleteAsync(collection, filter, remaining(deadline)), deadline);
         if (result.getStatus() != UpdateStatus.Completed) {
             throw new ComponentUnavailableException("Qdrant");
         }

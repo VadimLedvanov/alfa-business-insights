@@ -3,8 +3,8 @@ package alpha.business.insight.core.ml;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.UUID;
+import java.util.List;
 
 /**
  * Локальная замена ML по умолчанию; возвращает синтетические данные без чтения содержимого PDF.
@@ -14,13 +14,7 @@ import java.util.UUID;
 public class StubDocumentAnalyzer implements DocumentAnalyzer {
     @Override
     public Embedding embedding(java.util.Map<String, String> request) {
-        return new Embedding("stub-v1", 8, true, embed(request.get("text")));
-    }
-
-    /** Возвращает тот же синтетический вектор stub-v1, что используется при индексации. */
-    @Override
-    public List<Float> embed(String query) {
-        return List.of(1f, 0.5f, 0.25f, 0.125f, 0f, 0f, 0f, 0f);
+        return new Embedding("stub-v1", 8, true, List.of(1f, 0.5f, 0.25f, 0.125f, 0f, 0f, 0f, 0f));
     }
 
     /**

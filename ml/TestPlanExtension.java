@@ -5,10 +5,7 @@ import io.qameta.allure.Allure;
 import io.qameta.allure.model.Label;
 import io.qameta.allure.model.StepResult;
 import io.qameta.allure.model.TestResult;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,12 +19,14 @@ import org.junit.jupiter.api.extension.BeforeTestExecutionCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.springframework.core.io.ClassPathResource;
 
 /** Группирует результаты Allure и описывает фактически выполненные шаги тестов. */
 public final class TestPlanExtension
         implements BeforeTestExecutionCallback, AfterTestExecutionCallback, InvocationInterceptor {
-    private static final Properties PLANS = loadProperties("/test-plans.properties");
-    private static final Properties NAMES = loadProperties("/test-names.properties");
+    private static final Properties PLANS = loadYaml("/test-plans.yaml");
+    private static final Properties NAMES = loadYaml("/test-names.yaml");
     private static final Pattern STEP_NUMBER = Pattern.compile("^\\s*\\d+(?:\\.\\d+)*\\.\\s*");
 
     /** Устанавливает исходное описание проверки и её каноническое имя в Allure. */
@@ -295,18 +294,22 @@ public final class TestPlanExtension
     private static String missingPlan(String key) {
         return "План проверки не найден или имеет неверный формат для "
                 + key
-                + ". План не выведен из реализации; проверьте test-plans.properties.";
+                + ". План не выведен из реализации; проверьте test-plans.yaml.";
     }
 
-    /** Загружает свойства метаданных в UTF-8 и завершает запуск при ошибке ресурса. */
-    private static Properties loadProperties(String resource) {
-        try (InputStream input = TestPlanExtension.class.getResourceAsStream(resource)) {
-            if (input == null)
-                throw new IllegalStateException("Missing test metadata resource " + resource);
-            Properties properties = new Properties();
-            properties.load(new InputStreamReader(input, StandardCharsets.UTF_8));
+    /** Загружает YAML с метаданными Allure и завершает запуск при ошибке ресурса. */
+    private static Properties loadYaml(String resource) {
+        ClassPathResource yaml = new ClassPathResource(resource.substring(1));
+        if (!yaml.exists())
+            throw new IllegalStateException("Missing test metadata resource " + resource);
+        try {
+            YamlPropertiesFactoryBean factory = new YamlPropertiesFactoryBean();
+            factory.setResources(yaml);
+            Properties properties = factory.getObject();
+            if (properties == null)
+                throw new IllegalStateException("Empty test metadata resource " + resource);
             return properties;
-        } catch (Exception failure) {
+        } catch (RuntimeException failure) {
             throw new ExceptionInInitializerError(failure);
         }
     }
