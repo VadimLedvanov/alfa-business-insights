@@ -93,7 +93,7 @@ export function FeedPage() {
               <div className="empty">В этом разрезе значимых событий нет.<br />Попробуйте другой фильтр или другую компанию.</div>
             ) : (
               visible.map((it) => (
-                <InsightTile key={it.event.id} event={it.event} tile={it.tile} onClick={() => navigate(`/insight/${it.event.id}`)} />
+                <InsightTile key={it.event.id} event={it.event} tile={it.tile} isNew={it.event.id.startsWith('evt-mat-')} onClick={() => navigate(`/insight/${it.event.id}`)} />
               ))
             )}
           </LoadErr>

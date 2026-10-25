@@ -10,7 +10,7 @@ import { InsightPage } from './pages/InsightPage';
 import { SourcesPage } from './pages/SourcesPage';
 
 export function App() {
-  const { me } = useAuth();
+  const { me, isAdmin } = useAuth();
   const { companyId } = useCompany();
   const { path, navigate } = useRouter();
 
@@ -24,13 +24,13 @@ export function App() {
       return;
     }
     if (me && (route === '' || route === 'login')) {
-      navigate(companyId ? '/home' : '/companies');
+      navigate(isAdmin ? '/sources' : companyId ? '/home' : '/companies');
       return;
     }
     if (me && !companyId && (route === 'home' || route === 'feed' || route === 'insight')) {
       navigate('/companies');
     }
-  }, [me, companyId, route, navigate]);
+  }, [me, isAdmin, companyId, route, navigate]);
 
   if (!me) return <LoginPage />;
 

@@ -11,11 +11,12 @@ function category(ev: EventRead): string {
   return 'Макроэкономика';
 }
 
-export function InsightTile({ event, tile, onClick }: { event: EventRead; tile: TileData; onClick: () => void }) {
+export function InsightTile({ event, tile, onClick, isNew }: { event: EventRead; tile: TileData; onClick: () => void; isNew?: boolean }) {
   const whyText = tile.why.join(', ');
   return (
-    <button className="insight-tile" onClick={onClick}>
+    <button className={`insight-tile${isNew ? ' insight-tile--new' : ''}`} onClick={onClick}>
       <span className="insight-tile__meta">
+        {isNew && <span className="insight-tile__new">Новое</span>}
         <ImpactBadge level={tile.impact} />
         <span>{dateFmt.format(new Date(event.createdAt))} · {category(event)}</span>
       </span>

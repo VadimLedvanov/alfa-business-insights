@@ -4,7 +4,8 @@
 // Формы ответов совпадают, поэтому переключение режима не меняет экраны.
 
 import type { CompanyContext, EventRead, Insight, Me } from './types';
-import { DEMO_COMPANIES, DEMO_COMPANY_IDS, DEMO_EVENTS, DEMO_USERS, stubInsight } from './stubs';
+import { DEMO_COMPANIES, DEMO_COMPANY_IDS, DEMO_EVENTS, DEMO_USERS, stubInsight, userEvent, userInsight } from './stubs';
+import { getMaterialByEvent, readyMaterials } from './sessionStore';
 
 const MODE = (import.meta.env.VITE_API_MODE as string) ?? 'stub';
 export const IS_STUB = MODE !== 'live';
@@ -54,7 +55,9 @@ export const api = {
   async events(): Promise<EventRead[]> {
     if (IS_STUB) {
       await delay(250);
-      return DEMO_EVENTS;
+      // Готовые материалы, добавленные администратором, появляются в ленте первыми (крит. 05).
+      const added = readyMaterials().map(userEvent);
+      return [...added, ...DEMO_EVENTS];
     }
     return get<EventRead[]>('/events');
   },
@@ -63,6 +66,8 @@ export const api = {
   async insight(companyId: string, eventId: string): Promise<Insight> {
     if (IS_STUB) {
       await delay(400);
+      const added = getMaterialByEvent(eventId);
+      if (added) return userInsight(companyId, added);
       const i = stubInsight(companyId, eventId);
       if (!i) throw new ApiError(404, 'insight not found');
       return i;
@@ -74,6 +79,8 @@ export const api = {
   async generateInsight(companyId: string, eventId: string): Promise<Insight> {
     if (IS_STUB) {
       await delay(900);
+      const added = getMaterialByEvent(eventId);
+      if (added) return userInsight(companyId, added);
       const i = stubInsight(companyId, eventId);
       if (!i) throw new ApiError(404, 'insight not found');
       return i;

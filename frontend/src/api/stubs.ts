@@ -4,6 +4,7 @@
 // Источник «Позиция банка» ссылается на реальное название материала ЦМИ из папки аналитики.
 
 import type { CompanyContext, EventRead, Insight, Me } from './types';
+import type { Material } from './sessionStore';
 
 export const DEMO_USERS: Record<string, Me> = {
   director: { id: 'u-director', username: 'Андрей · руководитель казначейства', roles: ['COMPANY_DIRECTOR'] },
@@ -237,4 +238,54 @@ Object.assign(DEMO_INSIGHTS, {
 
 export function stubInsight(companyId: string, eventId: string): Insight | null {
   return DEMO_INSIGHTS[`${companyId}:${eventId}`] ?? null;
+}
+
+// ---- Материалы, добавленные администратором в сессии (крит. 05) ----
+
+function companyFeatures(companyId: string): string[] {
+  const c = DEMO_COMPANIES[companyId];
+  if (!c) return ['Профиль компании'];
+  const p = c.profile;
+  const out: string[] = [];
+  if (p.mainIndustryName) out.push(p.mainIndustryName);
+  if (p.hasLoan) out.push('Кредитные продукты');
+  if (p.hasLeasing) out.push('Лизинг');
+  if (p.hasForeignTrade) out.push('ВЭД');
+  if (c.counterparties.length) out.push('Связи по платежам');
+  return out.slice(0, 3);
+}
+
+export function userEvent(m: Material): EventRead {
+  return {
+    id: m.eventId,
+    title: m.title,
+    sourceType: m.kind === 'pdf' ? 'PDF' : m.kind === 'link' ? 'URL' : 'TEXT',
+    sourceRef: m.title,
+    status: 'READY',
+    createdAt: new Date(m.addedAt).toISOString(),
+    materialsVersion: 4,
+  };
+}
+
+/** Предварительный инсайт по только что добавленному материалу: без позиции банка,
+ *  с низкой уверенностью и честной пометкой «нет данных» — вывод формируется моделью. */
+export function userInsight(companyId: string, m: Material): Insight {
+  const frag = `user-${m.id}`;
+  const features = companyFeatures(companyId);
+  return {
+    facts: [{ text: `Добавлен материал: «${m.title}». Текст принят системой и обрабатывается.`, fragment_id: frag }],
+    bank_view: [],
+    ai_inference: [{
+      text: `Материал может затрагивать вашу компанию по профилю: ${features.join(', ').toLowerCase()}. Это предварительная оценка — полный разбор формируется моделью по мере обработки источника.`,
+      based_on: [frag], confidence: 'low',
+    }],
+    hypotheses: [],
+    risks: [{ text: 'Возможное влияние уточняется после полной обработки материала.' }],
+    opportunities: [],
+    actions: [{ text: 'Вернуться к разбору после завершения обработки материала.' }],
+    features_used: features,
+    missing_data: ['Материал только что добавлен — вывод предварительный, полнота ещё проверяется.'],
+    sources: [{ fragment_id: frag, document_id: null, page: null }],
+    trace_id: `trace-${m.id}-${companyId}`,
+  };
 }

@@ -29,6 +29,8 @@
   transition: border-color .15s, transform .15s;
 }
 .insight-tile:hover { border-color: var(--color-light-border-primary); transform: translateY(-1px); }
+.insight-tile--new { border-color: var(--radar-opportunity-text); box-shadow: 0 0 0 3px var(--radar-opportunity-bg); }
+.insight-tile__new { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--radar-opportunity-text); color: #fff; font-size: 12px; font-weight: 600; }
 .insight-tile__meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; line-height: 16px; color: var(--color-light-text-secondary); }
 .insight-tile__title { font-size: 16px; line-height: 22px; font-weight: 700; }
 .insight-tile__why { font-size: 14px; line-height: 20px; color: var(--color-light-text-secondary); }
