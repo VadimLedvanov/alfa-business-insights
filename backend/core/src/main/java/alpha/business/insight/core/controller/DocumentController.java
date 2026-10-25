@@ -62,16 +62,17 @@ public class DocumentController {
      */
     @PostMapping(value = "/admin/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Загрузить PDF аналитики банка в базу знаний",
-            description = "Только SYSTEM_ADMIN. Максимум 20 МБ. Возвращает результат после записи в PostgreSQL "
+            description = "Только SYSTEM_ADMIN. Максимум 50 МБ. Возвращает результат после записи в PostgreSQL "
                     + "и Qdrant. По умолчанию включена ML-заглушка: текст синтетический, PDF не анализируется.")
     @ApiResponse(responseCode = "201", description = "Документ сохранён и проиндексирован")
     @ApiResponse(responseCode = "400", description = "Пустой файл или некорректные параметры")
-    @ApiResponse(responseCode = "413", description = "Файл превышает 20 МБ")
+    @ApiResponse(responseCode = "413", description = "Файл превышает 50 МБ")
     @ApiResponse(responseCode = "415", description = "Файл не имеет сигнатуры PDF")
+    @ApiResponse(responseCode = "422", description = "ML не смог извлечь текст из PDF")
     @ApiResponse(responseCode = "502", description = "Некорректный ответ ML")
     @ApiResponse(responseCode = "503", description = "ML или Qdrant недоступен; запрос можно повторить")
     public ResponseEntity<DocumentMetadata> upload(
-            @Parameter(description = "Оригинальный PDF размером до 20 МБ", required = true) @RequestPart("file") MultipartFile file,
+            @Parameter(description = "Оригинальный PDF размером до 50 МБ", required = true) @RequestPart("file") MultipartFile file,
             @Parameter(description = "Название материала; по умолчанию имя файла")
             @RequestParam(required = false) String title,
             @Parameter(description = "Дата публикации в формате yyyy-MM-dd")

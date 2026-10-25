@@ -33,7 +33,7 @@ public record DocumentMetadata(
         @Schema(description = "Исходное имя PDF, используемое при скачивании.",
                 requiredMode = Schema.RequiredMode.REQUIRED)
         String fileName,
-        @Schema(description = "Размер исходного PDF в байтах.", minimum = "1", maximum = "20971520",
+        @Schema(description = "Размер исходного PDF в байтах.", minimum = "1", maximum = "52428800",
                 requiredMode = Schema.RequiredMode.REQUIRED)
         long sizeBytes,
         @Schema(description = "SHA-256 исходного файла в шестнадцатеричном представлении.", minLength = 64, maxLength = 64,

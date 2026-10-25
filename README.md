@@ -177,3 +177,7 @@ flowchart LR
 - [Frontend](http://localhost) (после запуска стенда).
 - [OpenAPI / Swagger UI](http://localhost/api/swagger-ui.html) (после запуска стенда).
 - [Keycloak](http://localhost/auth) (после запуска стенда).
+
+## Тесты
+
+[Запуск тестов и локальный Allure](TESTING.md).

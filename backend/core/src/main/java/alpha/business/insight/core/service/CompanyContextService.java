@@ -1,6 +1,7 @@
 package alpha.business.insight.core.service;
 
 import alpha.business.insight.core.dto.CompanyContext;
+import alpha.business.insight.core.dto.CompanyListItem;
 import alpha.business.insight.core.dto.CompanyProfile;
 import alpha.business.insight.core.dto.Concentration;
 import alpha.business.insight.core.dto.CounterpartyPaymentTotals;
@@ -10,6 +11,8 @@ import alpha.business.insight.core.model.CompanyProfileStatus;
 import alpha.business.insight.core.repository.CompanyRepository;
 import alpha.business.insight.core.repository.CompanyPaymentSummaryRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -35,6 +38,20 @@ public class CompanyContextService {
         this.companies = companies;
         this.payments = payments;
         this.topCounterparties = topCounterparties;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<CompanyListItem> getCompanies(String companyId, String city, String mainIndustryCode,
+                                               Pageable pageable) {
+        String id = normalizeFilter(companyId);
+        if (id != null) {
+            id = id.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+        }
+        return companies.findCompanies(id, normalizeFilter(city), normalizeFilter(mainIndustryCode), pageable);
+    }
+
+    private static String normalizeFilter(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**

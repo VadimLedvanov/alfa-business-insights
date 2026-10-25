@@ -6,6 +6,7 @@ import alpha.business.insight.core.ml.DocumentAnalyzer;
 import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.repository.DocumentRepository;
 import alpha.business.insight.core.model.KnowledgeDocument;
+import feign.FeignException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -29,9 +30,9 @@ import java.util.UUID;
 @Service
 public class DocumentService {
     /**
-     * Максимальный размер оригинала PDF: 20 МБ.
+     * Максимальный размер оригинала PDF: 50 МБ.
      */
-    private static final int MAX_BYTES = 20 * 1024 * 1024;
+    private static final int MAX_BYTES = 50 * 1024 * 1024;
 
     /**
      * JPA-хранилище метаданных успешно загруженных документов.
@@ -73,7 +74,7 @@ public class DocumentService {
      * Сохраняет PDF и чанки, затем завершает транзакцию записи метаданных через JPA-репозиторий.
      * При обычной ошибке пытается удалить файл и уже записанные точки Qdrant.
      *
-     * @param file исходный PDF размером до 20 МБ
+     * @param file исходный PDF размером до 50 МБ
      * @param title название материала; при отсутствии используется имя файла
      * @param publicationDate дата публикации либо null
      * @return метаданные успешно сохранённого и проиндексированного документа
@@ -125,13 +126,23 @@ public class DocumentService {
     }
 
     /**
-     * Недоступность ML даёт HTTP 503; некорректный ответ — HTTP 502.
+     * Отказ ML обработать PDF даёт HTTP 422, недоступность — HTTP 503, некорректный ответ — HTTP 502.
      */
     private DocumentAnalysis analyze(UUID id, byte[] pdf) {
         DocumentAnalysis result;
         try {
             result = analyzer.analyze(id, pdf);
         } catch (RuntimeException exception) {
+            if (exception instanceof FeignException failure) {
+                log.warn("Ошибка обработки PDF {} в ML: HTTP {}", id, failure.status());
+                if (failure.status() == 422) {
+                    throw new ResponseStatusException(HttpStatus.valueOf(422),
+                            "Не удалось извлечь текст из PDF. Проверьте, что файл не повреждён и содержит "
+                                    + "текстовый слой. Для сканов требуется распознавание текста (OCR).", exception);
+                }
+            } else {
+                log.warn("Ошибка вызова ML для PDF {}", id, exception);
+            }
             throw new ComponentUnavailableException("ML");
         }
         try {
@@ -169,12 +180,12 @@ public class DocumentService {
      */
     private static byte[] readPdf(MultipartFile file) {
         if (file.getSize() > MAX_BYTES) {
-            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 20 МБ");
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 50 МБ");
         }
         try (InputStream input = file.getInputStream()) {
             byte[] pdf = input.readNBytes(MAX_BYTES + 1);
             if (pdf.length > MAX_BYTES) {
-                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 20 МБ");
+                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Размер PDF превышает 50 МБ");
             }
             if (pdf.length == 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "PDF не должен быть пустым");
