@@ -62,7 +62,7 @@ function CompanyCard({ id }: { id: string }) {
 
   if (error) return <LoadErr loading={false} error={error} onRetry={reload}>{null}</LoadErr>;
   if (loading || !ctx) {
-    return <div className="card card--pad company-card"><div className="skeleton" style={{ height: 180 }} /></div>;
+    return <div className="card card--pad company-card company-card--loading" aria-busy="true"><div className="skeleton" /></div>;
   }
   const p = ctx.profile;
   const products = bankProducts(p);
@@ -70,13 +70,13 @@ function CompanyCard({ id }: { id: string }) {
 
   return (
     <section className={`card card--pad company-card${selected ? ' company-card--selected' : ''}`}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="company-card__header">
         <div className="profile__mono">{initials(id)}</div>
         {selected && <span className="tag" style={{ background: 'var(--radar-impact-high-bg)', color: 'var(--radar-impact-high-text)' }}>Выбрана</span>}
       </div>
       <h2 className="company-card__name">{companyIdLabel(id)}</h2>
       <p className="company-card__industry">{p.mainIndustryName}</p>
-      <dl className="profile__list" style={{ margin: '18px 0', paddingTop: 16, borderTop: '1px solid var(--color-light-border-secondary)' }}>
+      <dl className="profile__list company-card__details">
         <div className="profile__line"><dt>Регион</dt><dd>{p.region ?? 'нет данных'}</dd></div>
         <div className="profile__line"><dt>Выручка</dt><dd>{revenueLabel(p.revenue)}</dd></div>
         {ved && <div className="profile__line"><dt>ВЭД</dt><dd>{ved.replace('ВЭД, страна: ', '')}</dd></div>}
@@ -85,7 +85,7 @@ function CompanyCard({ id }: { id: string }) {
       {products.length > 0 && (
         <div className="chips">{products.map((t) => <span key={t} className="tag">{t}</span>)}</div>
       )}
-      <div style={{ marginTop: 20 }}>
+      <div className="company-card__action">
         <Button view={selected ? 'primary' : 'accent'} size={48} block onClick={open}>
           Открыть Радар
         </Button>
