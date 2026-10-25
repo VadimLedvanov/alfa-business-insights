@@ -133,6 +133,36 @@ export interface Insight {
   cost_rub?: number;
 }
 
+// ---- Пагинация и списки (бэк отдаёт Spring Page) ----
+
+/** Spring Data Page<T> — отдаётся ручками списков. */
+export interface Page<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+}
+
+/** CompanyListItem.java — краткая карточка компании в списке. */
+export interface CompanyListItem {
+  companyId: string;
+  profileStatus: CompanyProfileStatus;
+  mainIndustryCode: string | null;
+  mainIndustryName: string | null;
+  city: string | null;
+  region: string | null;
+}
+
+/** EventListItem.java — краткая карточка события в списке. */
+export interface EventListItem {
+  id: string;
+  title: string;
+  sourceType: EventSourceType;
+  status: EventStatus;
+  createdAt: string;
+}
+
 // ---- Производные для интерфейса (не из бэка) ----
 
 /** Значимость события для компании — вычисляется фронтом по контексту и инсайту. */

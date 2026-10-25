@@ -3,7 +3,7 @@
 //  - live: реальные запросы к /api (включается VITE_API_MODE=live, когда бэк готов).
 // Формы ответов совпадают, поэтому переключение режима не меняет экраны.
 
-import type { CompanyContext, EventRead, Insight, Me } from './types';
+import type { CompanyContext, CompanyListItem, EventListItem, EventRead, Insight, Me, Page } from './types';
 import { DEMO_COMPANIES, DEMO_COMPANY_IDS, DEMO_EVENTS, DEMO_USERS, stubInsight, userEvent, userInsight } from './stubs';
 import { getMaterialByEvent, readyMaterials } from './sessionStore';
 
@@ -37,9 +37,11 @@ export const api = {
     return get<Me>('/auth/me');
   },
 
-  /** Список компаний пользователя. У бэка пока нет ручки — в обоих режимах возвращаем демо-ID. */
+  /** ID компаний пользователя. Live: GET /api/companies (Spring Page). Stub: демо-ID. */
   async companyIds(): Promise<string[]> {
-    return [...DEMO_COMPANY_IDS];
+    if (IS_STUB) return [...DEMO_COMPANY_IDS];
+    const page = await get<Page<CompanyListItem>>('/companies?size=100');
+    return page.content.map((c) => c.companyId);
   },
 
   async company(id: string): Promise<CompanyContext> {
@@ -59,7 +61,9 @@ export const api = {
       const added = readyMaterials().map(userEvent);
       return [...added, ...DEMO_EVENTS];
     }
-    return get<EventRead[]>('/events');
+    // Live: только готовые события (у них есть инсайт); бэк отдаёт Spring Page.
+    const page = await get<Page<EventListItem>>('/events?size=50&status=READY');
+    return page.content.map(toEventRead);
   },
 
   /** Сохранённый инсайт без обращения к LLM. */
@@ -88,6 +92,10 @@ export const api = {
     return post<Insight>(`/companies/${encodeURIComponent(companyId)}/events/${eventId}/insight`);
   },
 };
+
+function toEventRead(e: EventListItem): EventRead {
+  return { id: e.id, title: e.title, sourceType: e.sourceType, sourceRef: null, status: e.status, createdAt: e.createdAt, materialsVersion: null };
+}
 
 export function stubUser(key: string): Me | undefined {
   return DEMO_USERS[key];
