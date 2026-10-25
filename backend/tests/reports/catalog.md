@@ -95,14 +95,25 @@
 
 ### TestUnitFilterUnsupportedFactsAndBankView
 
-Проверка привязки фактов и позиции банка
+Проверка привязки фактов и позиции банка по смешанным источникам
 
 `alpha.business.insight.core.insight.InsightValidatorTest#removesUnretrievedFactsAndBankViewFromNonBankSources`
 
-1. Передать подтверждённый и неподтверждённые факты и позицию банка по не банковскому источнику.
-2. Проверить оставшиеся записи, ссылки и missing_data.
+1. Передать подтверждённый и неподтверждённые факты; для bank_view указать обычный EVENT_TEXT, синтетический BANK_ANALYTICS stub и реальный BANK_ANALYTICS фрагмент.
+2. Проверить факты, единственную допустимую позицию банка, точную причину отклонения и идентификаторы источников.
 
-**Ожидаемый результат:** Остаётся только подтверждённый факт; позиция банка удалена, выдуманный источник исключён, причина удаления указана.
+**Ожидаемый результат:** Остаётся только подтверждённый факт и позиция по реальному материалу банка; позиции по обычному и синтетическому материалам удалены, непроверенная ссылка исключена из источников.
+
+### TestUnitDemotesUnreferencedFactToLowConfidenceInference
+
+Неподтверждённый факт преобразуется в вывод с низкой уверенностью
+
+`alpha.business.insight.core.insight.InsightValidatorTest#TestUnitDemotesUnreferencedFactToLowConfidenceInference`
+
+1. Передать факт без fragment_id, подтверждённый факт и существующий вывод с валидной ссылкой.
+2. Проверить facts, ai_inference, confidence, based_on и сохранность исходного вывода.
+
+**Ожидаемый результат:** Неподтверждённый текст отсутствует в facts и ровно один раз добавлен в ai_inference с confidence=low и пустым based_on; подтверждённый факт и существующий вывод сохранены.
 
 ### TestUnitIgnoresAbsentCompanyListFilters
 
@@ -1443,6 +1454,17 @@ Feign отправляет PDF и декодирует результат ана
 
 **Ожидаемый результат:** Синтетические/неподтверждённые факты и позиция банка удалены; ссылки на источники содержат метаданные, исходный текст фрагмента не попадает в сохранённый payload.
 
+### TestIntegrationInsightReceivesSelectedCompanyContextAndIsolatesCache
+
+Контекст выбранной компании передаётся в инсайт
+
+`alpha.business.insight.core.insight.CompanyInsightContextIntegrationTest#TestIntegrationInsightReceivesSelectedCompanyContextAndIsolatesCache`
+
+1. Подготовить три компании одной группы с разными профилями и направлениями платежей для общего события.
+2. Сгенерировать инсайты через integration pipeline и сверить вход LLM, записи и повторный GET.
+
+**Ожидаемый результат:** Каждый инсайт получает контекст выбранной компании и общую группу; для трёх компаний сохраняются независимые записи и кэш.
+
 ## E2E
 
 ### TestE2ECompanyAccessRequiresGrant
@@ -1468,6 +1490,17 @@ Feign отправляет PDF и декодирует результат ана
 **Ожидаемый результат:** Ожидаются 403 для директора и 401 для анонимного запроса.
 
 ## Smoke
+
+### TestSmokeConsumerInsightHttpJourney
+
+Пользовательский HTTP-путь от списка компаний до сохранённого инсайта
+
+`alpha.business.insight.core.qa.insights.ConsumerInsightHttpSmokeTest#TestSmokeConsumerInsightHttpJourney`
+
+1. Создать компанию и READY-событие, получить токен директора и разрешение на компанию.
+2. Через HTTP найти компанию и событие, проверить отсутствие кэша, сгенерировать инсайт и прочитать его повторно.
+
+**Ожидаемый результат:** Директор проходит весь путь; повторное чтение совпадает с генерацией, запись связана с компанией и событием, заглушки явно помечены.
 
 ### TestSmokeCompanyContextCalculations
 

@@ -15,6 +15,9 @@ mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report -Dtest=Integratio
 mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report -Dtest=E2eSuite
 mvn -B -ntp -f backend/tests/pom.xml clean test -Plocal-report -Dtest=SmokeSuite
 
+# Фокусная проверка инсайтов по issue #25; HTML и Allure results — в backend/tests/target
+mvn -B -ntp -f backend/tests/pom.xml test -Plocal-report -Dtest=InsightValidatorTest,CompanyInsightContextIntegrationTest,ConsumerInsightHttpSmokeTest
+
 # Python ML: Python 3.11+ и отдельное виртуальное окружение
 python3 -m venv .venv
 # macOS/Linux: source .venv/bin/activate; Windows: .venv\Scripts\activate
@@ -43,8 +46,12 @@ Java и pytest можно запускать одновременно после
 и возвращает ненулевой код при падениях или пропусках тестов. Если ошибка возникла до запуска
 тестов (например, не компилируется код), сначала исправь причину из вывода Maven.
 
-Для запуска кнопкой в IDE импортируй `backend/tests/pom.xml` и выбери класс
-в `backend/tests/suites/`. Рабочая директория — `backend/tests`, JDK — 21.
+В текущей локальной настройке VS Code JUnit-кнопки запуска используют связанное
+представление из `.vscode/java-qa`, а `.vscode/local-qa.code-workspace` открывает
+его вместе с полным корнем репозитория. Эти workspace и JUnit-настройки принадлежат
+пользователю и отсутствуют в чистом клоне. На другой машине открой корень репозитория
+обычным способом и запускай тесты переносимыми Maven-командами выше. Прямые JUnit
+кнопки относятся только к локальному отображению тестов и не заменяют Maven-команду.
 
 | Набор | Назначение |
 |---|---|
