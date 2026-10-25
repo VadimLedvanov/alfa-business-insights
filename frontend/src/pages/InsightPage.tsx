@@ -72,7 +72,8 @@ export function InsightPage({ eventId }: { eventId: string }) {
     try {
       const metadata = await api.document(source.document_id);
       const blob = await api.documentFile(source.document_id);
-      setPreview({ name: metadata.fileName, url: URL.createObjectURL(blob) });
+      const url = URL.createObjectURL(blob);
+      setPreview({ name: metadata.fileName, url: source.page ? `${url}#page=${source.page}` : url });
     } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось открыть PDF-источник.'); }
   };
 
@@ -160,5 +161,5 @@ function TextList({ title, items }: { title: string; items: string[] }) {
 
 function Source({ source, onOpen }: { source: SourceRef; onOpen: () => void }) {
   const label = source.document_id ? `PDF · ${source.document_id}${source.page ? ` · стр. ${source.page}` : ''}` : source.url || 'Текстовый источник';
-  return <div className="source-card"><span><strong>{label}</strong><small>{source.fragment_id}</small></span>{source.url ? <a className="button button--small" href={source.url} target="_blank" rel="noreferrer">Открыть</a> : source.document_id && <button className="button button--small" onClick={onOpen}>Просмотр PDF</button>}</div>;
+  return <div className="source-card"><span><strong>{label}</strong><small>{source.fragment_id}</small></span>{source.document_id ? <button className="button button--small" onClick={onOpen}>Просмотр PDF</button> : source.url && <a className="button button--small" href={source.url} target="_blank" rel="noreferrer">Открыть</a>}</div>;
 }
