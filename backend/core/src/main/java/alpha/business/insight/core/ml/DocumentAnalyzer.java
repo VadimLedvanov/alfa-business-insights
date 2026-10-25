@@ -17,17 +17,18 @@ import java.util.Map;
  */
 @FeignClient(name = "document-analyzer", url = "${ml.url:http://localhost:8000}")
 public interface DocumentAnalyzer {
-    /** Получает вектор запроса и проверяет совместимость с существующей коллекцией Qdrant. */
-    default List<Float> embed(String query) {
+    /** Получает вектор запроса и проверяет метаданные и значения ответа ML. */
+    default Embedding embed(String query) {
         Embedding result = embedding(Map.of("text", query));
-        if (result == null || !result.stub() || !"stub-v1".equals(result.embeddingModel())
-                || result.embeddingDimension() != 8 || result.embedding() == null || result.embedding().size() != 8
+        if (result == null || result.embeddingModel() == null || result.embeddingModel().isBlank()
+                || result.embeddingDimension() < 1 || result.embedding() == null
+                || result.embedding().size() != result.embeddingDimension()
                 || result.embedding().stream().anyMatch(value -> value == null || !Float.isFinite(value))
                 || result.embedding().stream().allMatch(value -> value == 0f)) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "ML вернул некорректный или несовместимый поисковый вектор: требуется stub-v1 размерности 8");
+                    "ML вернул некорректный поисковый вектор");
         }
-        return result.embedding();
+        return result;
     }
 
     @PostMapping(value = "/embeddings", consumes = MediaType.APPLICATION_JSON_VALUE)

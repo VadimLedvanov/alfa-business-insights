@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -95,9 +97,10 @@ public class DocumentService {
         String documentTitle = title == null || title.isBlank() ? name : title.strip();
         UUID documentId = UUID.randomUUID();
         boolean indexingStarted = false;
+        DocumentAnalysis analysis = null;
         try {
             storage.write(documentId, pdf);
-            DocumentAnalysis analysis = analyze(documentId, pdf);
+            analysis = analyze(documentId, pdf);
             indexingStarted = true;
             vectors.index(analysis, publicationDate, deadline);
             KnowledgeDocument document = new KnowledgeDocument(documentId, documentTitle, name, storage.relativePath(documentId),
@@ -105,10 +108,10 @@ public class DocumentService {
                     analysis.schemaVersion(), analysis.embeddingModel(), analysis.embeddingDimension(), analysis.stub());
             return DocumentMetadata.from(repository.saveAndFlush(document));
         } catch (IOException exception) {
-            cleanup(documentId, indexingStarted);
+            cleanup(documentId, indexingStarted, analysis);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Не удалось сохранить PDF", exception);
         } catch (RuntimeException exception) {
-            cleanup(documentId, indexingStarted);
+            cleanup(documentId, indexingStarted, analysis);
             throw exception;
         }
     }
@@ -123,6 +126,24 @@ public class DocumentService {
     public DocumentMetadata get(UUID documentId) {
         return repository.findById(documentId).map(DocumentMetadata::from).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Документ не найден"));
+    }
+
+    /** Возвращает страницу загруженных PDF без раскрытия внутренних путей хранения. */
+    public Page<DocumentMetadata> list(Pageable pageable) {
+        return repository.findAll(pageable).map(DocumentMetadata::from);
+    }
+
+    /** Удаляет векторы, оригинальный PDF и метаданные документа. */
+    public void delete(UUID documentId) {
+        KnowledgeDocument document = repository.findById(documentId).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "Документ не найден"));
+        vectors.delete(documentId, document.getEmbeddingModel(), document.getEmbeddingDimension(), document.isStub());
+        try {
+            storage.delete(document.getFilePath());
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Не удалось удалить оригинал PDF", exception);
+        }
+        repository.delete(document);
     }
 
     /**
@@ -160,7 +181,7 @@ public class DocumentService {
      * Независимо пытается удалить файл и точки Qdrant; сохраняет исходную ошибку загрузки.
      * Автоматических повторов после сбоя процесса нет.
      */
-    private void cleanup(UUID documentId, boolean indexingStarted) {
+    private void cleanup(UUID documentId, boolean indexingStarted, DocumentAnalysis analysis) {
         try {
             storage.delete(storage.relativePath(documentId));
         } catch (IOException exception) {
@@ -168,7 +189,7 @@ public class DocumentService {
         }
         if (indexingStarted) {
             try {
-                vectors.delete(documentId);
+                if (analysis != null) vectors.delete(documentId, analysis.embeddingModel(), analysis.embeddingDimension(), analysis.stub());
             } catch (RuntimeException exception) {
                 log.error("Не удалось удалить чанки неудавшейся загрузки {}", documentId, exception);
             }

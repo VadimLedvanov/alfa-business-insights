@@ -74,4 +74,5 @@ documents:
 
 ml:
   stub: ${ML_STUB}
+  embedder: ${ML_EMBEDDER}
   url: ${ML_URL}

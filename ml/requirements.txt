@@ -4,3 +4,4 @@ pymupdf
 httpx
 feedparser
 trafilatura
+fastembed

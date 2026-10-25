@@ -95,18 +95,20 @@ public class InsightService {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "LLM не вернула поисковые запросы");
         }
         int queryCount = 0;
+        boolean stubEmbeddingUsed = false;
         for (JsonNode query : plan.path("search_queries")) {
             if (!query.isString() || query.asString().isBlank() || query.asString().length() > 1000) {
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Некорректный поисковый запрос LLM");
             }
             if (++queryCount > 3) { break; }
-            List<Float> embedding;
+            DocumentAnalyzer.Embedding embedding;
             try { embedding = analyzer.embed(query.asString()); }
             catch (ResponseStatusException exception) {
                 throw exception;
             } catch (RuntimeException exception) {
                 throw new ComponentUnavailableException("ML");
             }
+            stubEmbeddingUsed |= embedding.stub();
             List<InsightFragment> found = vectors.search(embedding);
             List<KnowledgeDocument> metadata = documents.findAllById(found.stream().map(InsightFragment::documentId).distinct().toList());
             Map<UUID, Boolean> available = new LinkedHashMap<>();
@@ -117,7 +119,9 @@ public class InsightService {
                     .toList();
             verified.forEach(fragment -> fragments.putIfAbsent(fragment.fragmentId(), fragment));
         }
-        missing.add("[ML STUB] Поисковые векторы синтетические; семантическая релевантность не оценивается");
+        if (stubEmbeddingUsed || fragments.values().stream().anyMatch(InsightFragment::stub)) {
+            missing.add("[ML STUB] Поисковые векторы синтетические; семантическая релевантность не оценивается");
+        }
         external.set("fragments", mapper.valueToTree(fragments.values()));
         input.set("plan", plan);
         ObjectNode draft = llm.complete("draft", input);

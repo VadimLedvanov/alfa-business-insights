@@ -1,103 +1,45 @@
-// Единая точка доступа к данным. Два режима:
-//  - stub (по умолчанию): данные из stubs.ts, чтобы прототип кликался без бэка;
-//  - live: реальные запросы к /api (включается VITE_API_MODE=live, когда бэк готов).
-// Формы ответов совпадают, поэтому переключение режима не меняет экраны.
-
-import type { CompanyContext, CompanyListItem, EventListItem, EventRead, Insight, Me, Page } from './types';
-import { DEMO_COMPANIES, DEMO_COMPANY_IDS, DEMO_EVENTS, DEMO_USERS, stubInsight, userEvent, userInsight } from './stubs';
-import { getMaterialByEvent, readyMaterials } from './sessionStore';
-import { authHeader } from '../auth/keycloak';
-
-const MODE = (import.meta.env.VITE_API_MODE as string) ?? 'stub';
-export const IS_STUB = MODE !== 'live';
-
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { headers: { Accept: 'application/json', ...authHeader() } });
-  if (!res.ok) throw new ApiError(res.status, `GET ${path} → ${res.status}`);
-  return (await res.json()) as T;
-}
-
-async function post<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { method: 'POST', headers: { Accept: 'application/json', ...authHeader() } });
-  if (!res.ok) throw new ApiError(res.status, `POST ${path} → ${res.status}`);
-  return (await res.json()) as T;
-}
+import type { CompanyContext, CompanyListItem, DocumentMetadata, EventListItem, EventRead, Insight, Me, Page } from './types';
+import { authHeader, kcLogout } from '../auth/keycloak';
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-    this.name = 'ApiError';
-  }
+  constructor(public status: number, message: string) { super(message); this.name = 'ApiError'; }
 }
+
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
+  const response = await fetch(`/api${path}`, { ...init, headers: { ...authHeader(), ...init.headers } });
+  if (response.ok) return response;
+  if (response.status === 401) {
+    kcLogout();
+    window.dispatchEvent(new Event('abi:unauthorized'));
+  }
+  const fallback = response.status === 401 ? 'Сессия завершена. Войдите снова.'
+    : response.status === 403 ? 'Недостаточно прав для этого действия.'
+    : response.status === 413 ? 'Файл превышает допустимый размер 50 МБ.'
+    : response.status === 404 ? 'Данные не найдены.' : `Не удалось выполнить запрос (${response.status}).`;
+  const details = await response.json().catch(() => null) as { detail?: string; message?: string } | null;
+  throw new ApiError(response.status, details?.detail || details?.message || fallback);
+}
+
+async function json<T>(path: string, init?: RequestInit): Promise<T> { return (await request(path, init)).json() as Promise<T>; }
 
 export const api = {
-  /** Текущий пользователь. В stub-режиме выбранного тестового пользователя отдаёт AuthContext. */
-  async me(): Promise<Me> {
-    return get<Me>('/auth/me');
+  me: () => json<Me>('/auth/me'),
+  companies: (page = 0) => json<Page<CompanyListItem>>(`/companies?page=${page}&size=20`),
+  company: (id: string) => json<CompanyContext>(`/companies/${encodeURIComponent(id)}`),
+  events: (page = 0, readyOnly = true) => json<Page<EventListItem>>(`/events?page=${page}&size=20${readyOnly ? '&status=READY' : ''}`),
+  event: (id: string) => json<EventRead>(`/events/${encodeURIComponent(id)}`),
+  insight: (companyId: string, eventId: string) => json<Insight>(`/companies/${encodeURIComponent(companyId)}/events/${encodeURIComponent(eventId)}/insight`),
+  generateInsight: (companyId: string, eventId: string) => json<Insight>(`/companies/${encodeURIComponent(companyId)}/events/${encodeURIComponent(eventId)}/insight`, { method: 'POST' }),
+  documents: (page = 0) => json<Page<DocumentMetadata>>(`/admin/documents?page=${page}&size=20`),
+  document: (id: string) => json<DocumentMetadata>(`/documents/${encodeURIComponent(id)}`),
+  documentFile: async (id: string) => (await request(`/documents/${encodeURIComponent(id)}/file`)).blob(),
+  deleteDocument: async (id: string) => { await request(`/admin/documents/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
+  uploadDocument: (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return json<DocumentMetadata>('/admin/documents', { method: 'POST', body });
   },
-
-  /** ID компаний пользователя. Live: GET /api/companies (Spring Page). Stub: демо-ID. */
-  async companyIds(): Promise<string[]> {
-    if (IS_STUB) return [...DEMO_COMPANY_IDS];
-    const page = await get<Page<CompanyListItem>>('/companies?size=100');
-    return page.content.map((c) => c.companyId);
-  },
-
-  async company(id: string): Promise<CompanyContext> {
-    if (IS_STUB) {
-      await delay(250);
-      const c = DEMO_COMPANIES[id];
-      if (!c) throw new ApiError(404, `company ${id} not found`);
-      return c;
-    }
-    return get<CompanyContext>(`/companies/${encodeURIComponent(id)}`);
-  },
-
-  async events(): Promise<EventRead[]> {
-    if (IS_STUB) {
-      await delay(250);
-      // Готовые материалы, добавленные администратором, появляются в ленте первыми (крит. 05).
-      const added = readyMaterials().map(userEvent);
-      return [...added, ...DEMO_EVENTS];
-    }
-    // Live: только готовые события (у них есть инсайт); бэк отдаёт Spring Page.
-    const page = await get<Page<EventListItem>>('/events?size=50&status=READY');
-    return page.content.map(toEventRead);
-  },
-
-  /** Сохранённый инсайт без обращения к LLM. */
-  async insight(companyId: string, eventId: string): Promise<Insight> {
-    if (IS_STUB) {
-      await delay(400);
-      const added = getMaterialByEvent(eventId);
-      if (added) return userInsight(companyId, added);
-      const i = stubInsight(companyId, eventId);
-      if (!i) throw new ApiError(404, 'insight not found');
-      return i;
-    }
-    return get<Insight>(`/companies/${encodeURIComponent(companyId)}/events/${eventId}/insight`);
-  },
-
-  /** Запустить генерацию инсайта (POST). В прода — до 4 вызовов LLM; повтор отдаёт сохранённый. */
-  async generateInsight(companyId: string, eventId: string): Promise<Insight> {
-    if (IS_STUB) {
-      await delay(900);
-      const added = getMaterialByEvent(eventId);
-      if (added) return userInsight(companyId, added);
-      const i = stubInsight(companyId, eventId);
-      if (!i) throw new ApiError(404, 'insight not found');
-      return i;
-    }
-    return post<Insight>(`/companies/${encodeURIComponent(companyId)}/events/${eventId}/insight`);
-  },
+  createEvent: (title: string, sourceType: 'TEXT' | 'URL', sourceRef: string) => json<EventRead>('/events', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, sourceType, sourceRef }),
+  }),
 };
-
-function toEventRead(e: EventListItem): EventRead {
-  return { id: e.id, title: e.title, sourceType: e.sourceType, sourceRef: null, status: e.status, createdAt: e.createdAt, materialsVersion: null };
-}
-
-export function stubUser(key: string): Me | undefined {
-  return DEMO_USERS[key];
-}

@@ -1,160 +1,137 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Button } from '@alfalab/core-components/button';
 import { AppShell } from '../components/AppShell';
-import { InformationBanner } from '../components/InformationBanner';
-import {
-  DocumentMIcon, DocumentPlusMIcon, ArrowRightMIcon, ClockMIcon, ArrowsCwMIcon,
-  CheckmarkCircleMIcon, ExclamationCircleMIcon,
-} from '../ui/icons';
-import { addMaterial, listMaterials, subscribe, type Material, type MaterialStatus } from '../api/sessionStore';
-import { useRouter } from '../app/router';
-import { useCompany } from '../app/company';
+import { api } from '../api/client';
+import type { DocumentMetadata, Page } from '../api/types';
+import { DocumentMIcon } from '../ui/icons';
 import './SourcesPage.css';
 
-const EXAMPLE: { title: string; meta: string }[] = [
-  { title: 'ALFA-Macro_Insights-Policy_Rate_11Sep.pdf', meta: 'PDF · материал ЦМИ · ключевая ставка' },
-  { title: 'ALFA-consumption.pdf', meta: 'PDF · материал ЦМИ · потребление' },
-  { title: 'Профили компаний и связи', meta: '3 CSV · загружаются при старте' },
-];
-
 export function SourcesPage() {
-  const [, force] = useState(0);
-  const { navigate } = useRouter();
-  const { companyId } = useCompany();
+  const [documents, setDocuments] = useState<Page<DocumentMetadata> | null>(null);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ name: string; url: string } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
 
-  useEffect(() => subscribe(() => force((n) => n + 1)), []);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    api.documents(page).then((result) => {
+      if (active) setDocuments(result);
+    }).catch((e) => {
+      if (active) setError(e instanceof Error ? e.message : 'Не удалось загрузить документы.');
+    }).finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [page, revision]);
 
-  const materials = listMaterials();
-  const lastReady = materials.find((m) => m.status === 'ready');
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview.url);
+  }, [preview]);
 
-  return (
-    <AppShell active="sources">
-      <div className="page-head">
-        <div>
-          <div className="eyebrow">АДМИНИСТРИРОВАНИЕ</div>
-          <h1>Источники и материалы</h1>
-          <p className="sub">Добавьте новость или аналитику — после обработки появится новый инсайт в ленте компаний.</p>
-        </div>
-      </div>
-
-      <InformationBanner>
-        Это демонстрация пайплайна: материал проходит статусы обработки, затем в ленте компании появляется
-        новый разбор. Так видно, что выводы формируются из данных, а не заготовлены заранее.
-      </InformationBanner>
-
-      {lastReady && (
-        <div className="sources__cta">
-          <CheckmarkCircleMIcon width={24} height={24} color="var(--color-light-graphic-positive)" />
-          <span>Материал «{lastReady.title}» обработан — в ленте появился новый инсайт.</span>
-          <Button view="primary" size={40} rightAddons={<ArrowRightMIcon width={20} height={20} />} onClick={() => navigate(companyId ? '/feed' : '/companies')}>
-            Открыть ленту
-          </Button>
-        </div>
-      )}
-
-      <div className="sources__layout">
-        <AddMaterialForm />
-        <MaterialsLibrary materials={materials} />
-      </div>
-    </AppShell>
-  );
-}
-
-function AddMaterialForm() {
-  const [title, setTitle] = useState('');
-  const [url, setUrl] = useState('');
-  const [text, setText] = useState('');
-  const [fileName, setFileName] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const name = title.trim() || fileName || url.trim() || 'Новый материал';
-    const kind = fileName ? 'pdf' : url.trim() ? 'link' : 'text';
-    if (!fileName && !url.trim() && !text.trim()) return;
-    addMaterial(name, kind);
-    setTitle(''); setUrl(''); setText(''); setFileName('');
-    if (fileRef.current) fileRef.current.value = '';
+  const openPreview = async (doc: DocumentMetadata) => {
+    setBusyId(doc.documentId);
+    setError(null);
+    try {
+      const blob = await api.documentFile(doc.documentId);
+      setPreview({ name: doc.fileName, url: URL.createObjectURL(blob) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось открыть PDF.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  return (
-    <section className="card card--pad">
-      <h2 className="sources__h2">Добавить материал</h2>
-      <p className="sources__hint">PDF-аналитика, ссылка на новость или текст. После обработки материал используется в разборе.</p>
+  const download = async (doc: DocumentMetadata) => {
+    setBusyId(doc.documentId);
+    setError(null);
+    try {
+      const blob = await api.documentFile(doc.documentId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = doc.fileName;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось скачать PDF.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-      <form onSubmit={submit}>
-        <label className="sources__drop">
-          <DocumentPlusMIcon width={28} height={28} color="var(--color-light-graphic-secondary)" />
-          <span className="sources__drop-text">{fileName || 'Выбрать PDF с аналитикой или новостью'}</span>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf,.csv"
-            hidden
-            onChange={(e) => setFileName(e.target.files?.[0]?.name ?? '')}
-          />
-          <span className="sources__drop-btn">Выбрать файл</span>
-        </label>
+  const remove = async (doc: DocumentMetadata) => {
+    if (!window.confirm(`Удалить документ «${doc.fileName}» и все связанные данные?`)) return;
+    setBusyId(doc.documentId);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.deleteDocument(doc.documentId);
+      setNotice(`Документ «${doc.fileName}» удалён.`);
+      if (page > 0 && documents?.content.length === 1) setPage((current) => current - 1);
+      else setRevision((current) => current + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось удалить документ.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
-        <label className="field">
-          <span>Название материала</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={150} placeholder="Например, обзор рынка за октябрь" />
-        </label>
-        <label className="field">
-          <span>Ссылка на новость</span>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} type="url" placeholder="https://example.com/news" />
-        </label>
-        <label className="field">
-          <span>Или текст новости</span>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={10000} placeholder="Вставьте текст для анализа" />
-        </label>
-
-        <Button view="primary" size={48} rightAddons={<ArrowRightMIcon width={20} height={20} />} type="submit">
-          Отправить на обработку
-        </Button>
-      </form>
-    </section>
-  );
+  return <AppShell active="sources">
+    <div className="page-head"><div><div className="eyebrow">АДМИНИСТРИРОВАНИЕ</div><h1>Источники и материалы</h1><p className="sub">Загружайте аналитику банка и работайте с оригиналами PDF.</p></div></div>
+    <div className="sources__layout">
+      <UploadDocument onUploaded={(name) => { setNotice(`Файл «${name}» загружен и добавлен в базу знаний.`); setPage(0); setRevision((n) => n + 1); }} />
+      <section className="card card--pad">
+        <div className="sources__library-head"><div><h2 className="sources__h2">Библиотека PDF</h2><p className="sources__hint">{documents ? `${documents.totalElements} файлов` : 'Загруженные документы'}</p></div><button className="button" onClick={() => setRevision((n) => n + 1)} disabled={loading}>Обновить</button></div>
+        {notice && <p className="sources__notice" role="status">{notice}</p>}
+        {error && <p className="sources__error" role="alert">{error}</p>}
+        {loading ? <p className="sources__hint">Загружаем документы…</p> : documents?.content.length ? <div className="mat-list">
+          {documents.content.map((doc) => <article className="mat-row" key={doc.documentId}>
+            <span className="mat-row__icon"><DocumentMIcon width={20} height={20} /></span>
+            <div className="mat-row__text"><strong>{doc.title || doc.fileName}</strong><small>{doc.fileName} · {formatBytes(doc.sizeBytes)} · {new Date(doc.uploadedAt).toLocaleDateString('ru-RU')}</small></div>
+            <div className="sources__actions"><button className="button button--small" disabled={busyId === doc.documentId} onClick={() => void openPreview(doc)}>Просмотр</button><button className="button button--small" disabled={busyId === doc.documentId} onClick={() => void download(doc)}>Скачать</button><button className="button button--small button--danger" disabled={busyId === doc.documentId} onClick={() => void remove(doc)}>{busyId === doc.documentId ? 'Удаляем…' : 'Удалить'}</button></div>
+          </article>)}
+        </div> : <div className="empty">Загруженных PDF пока нет.</div>}
+        {documents && documents.totalPages > 1 && <div className="pagination"><button className="button" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>← Назад</button><span>{page + 1} / {documents.totalPages}</span><button className="button" disabled={page + 1 >= documents.totalPages} onClick={() => setPage((p) => p + 1)}>Далее →</button></div>}
+      </section>
+    </div>
+    {preview && <div className="pdf-overlay" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setPreview(null); }}><section className="pdf-dialog" role="dialog" aria-modal="true" aria-label={`Просмотр ${preview.name}`}><header><strong>{preview.name}</strong><button className="button button--small" onClick={() => setPreview(null)}>Закрыть</button></header><iframe title={preview.name} src={preview.url} /></section></div>}
+  </AppShell>;
 }
 
-const STATUS: Record<MaterialStatus, { label: string; cls: string; icon: JSX.Element }> = {
-  queued: { label: 'В очереди', cls: 'st--queued', icon: <ClockMIcon width={16} height={16} /> },
-  processing: { label: 'Обрабатывается', cls: 'st--processing', icon: <ArrowsCwMIcon width={16} height={16} /> },
-  ready: { label: 'Готов', cls: 'st--ready', icon: <CheckmarkCircleMIcon width={16} height={16} /> },
-  error: { label: 'Ошибка', cls: 'st--error', icon: <ExclamationCircleMIcon width={16} height={16} /> },
-};
+function UploadDocument({ onUploaded }: { onUploaded: (name: string) => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [inputKey, setInputKey] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
 
-function MaterialsLibrary({ materials }: { materials: Material[] }) {
-  return (
-    <section className="card card--pad">
-      <h2 className="sources__h2">Библиотека материалов</h2>
-      <p className="sources__hint">Добавленные вами материалы и примеры источников банка.</p>
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file) { setError('Выберите PDF-файл.'); return; }
+    if (file.size > 50 * 1024 * 1024) { setError('Размер PDF не должен превышать 50 МБ.'); return; }
+    setBusy(true); setError(null);
+    try {
+      const result = await api.uploadDocument(file);
+      onUploaded(result.stub ? `${result.fileName} (сохранён; ML-заглушка не анализировала PDF)` : result.fileName);
+      setFile(null); setInputKey((key) => key + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось загрузить PDF.');
+    } finally { setBusy(false); }
+  };
 
-      <div className="mat-list">
-        {materials.map((m) => {
-          const s = STATUS[m.status];
-          return (
-            <div key={m.id} className="mat-row">
-              <span className="mat-row__icon"><DocumentMIcon width={20} height={20} color="var(--color-light-graphic-secondary)" /></span>
-              <div className="mat-row__text">
-                <strong>{m.title}</strong>
-                <small>{m.kind === 'pdf' ? 'PDF' : m.kind === 'link' ? 'Ссылка' : 'Текст'}</small>
-              </div>
-              <span className={`mat-status ${s.cls}`}>{s.icon}{s.label}</span>
-            </div>
-          );
-        })}
-        {EXAMPLE.map((e) => (
-          <div key={e.title} className="mat-row">
-            <span className="mat-row__icon"><DocumentMIcon width={20} height={20} color="var(--color-light-graphic-secondary)" /></span>
-            <div className="mat-row__text">
-              <strong>{e.title}</strong>
-              <small>{e.meta}</small>
-            </div>
-            <span className="mat-status st--example">Пример</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+  return <section className="card card--pad"><h2 className="sources__h2">Добавить PDF</h2><p className="sources__hint">Файл до 50 МБ будет сохранён и проиндексирован в базе знаний.</p>
+    <form onSubmit={(e) => void submit(e)}>
+      <button type="button" className="sources__drop" onClick={() => input.current?.click()}><DocumentMIcon width={28} height={28} /><span className="sources__drop-text">{file?.name ?? 'Выберите PDF с аналитикой банка'}</span><span className="sources__drop-btn">Выбрать файл</span></button>
+      <input key={inputKey} ref={input} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { setFile(e.target.files?.[0] ?? null); setError(null); }} />
+      {error && <p className="sources__error" role="alert">{error}</p>}
+      <button className="button button--primary" disabled={busy}>{busy ? 'Загружаем…' : 'Загрузить'}</button>
+    </form>
+  </section>;
+}
+
+function formatBytes(size: number): string {
+  return size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} КБ` : `${(size / (1024 * 1024)).toFixed(1)} МБ`;
 }

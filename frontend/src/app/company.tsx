@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 // Выбранная компания — текущая компания Радара. Хранится в sessionStorage,
 // доступна в шапке оболочки и на всех экранах; её можно сменить в любой момент.
@@ -30,6 +30,12 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       /* приватный режим браузера */
     }
   }, []);
+
+  useEffect(() => {
+    const clear = () => setCompany(null);
+    window.addEventListener('abi:identity-changed', clear);
+    return () => window.removeEventListener('abi:identity-changed', clear);
+  }, [setCompany]);
 
   const value = useMemo<CompanyState>(() => ({ companyId, setCompany }), [companyId, setCompany]);
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;

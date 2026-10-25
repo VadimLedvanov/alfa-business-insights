@@ -1,84 +1,19 @@
-import { useState } from 'react';
-import { Button } from '@alfalab/core-components/button';
+import { useState, type FormEvent } from 'react';
 import { AlfaLogo } from '../ui/Logo';
-import { UsersMIcon, BriefcaseGearMIcon, ArrowRightMIcon } from '../ui/icons';
 import { useAuth } from '../auth/AuthContext';
-import { useRouter } from '../app/router';
 import './LoginPage.css';
-
-const ROLES = [
-  {
-    key: 'director',
-    title: 'Андрей, руководитель казначейства',
-    sub: 'Видит Радар, читает разбор событий, задаёт уточняющие вопросы.',
-    Icon: UsersMIcon,
-  },
-  {
-    key: 'sysadmin',
-    title: 'Администратор материалов',
-    sub: 'Добавляет новости и аналитику, следит за обработкой источников.',
-    Icon: BriefcaseGearMIcon,
-  },
-];
 
 export function LoginPage() {
   const { signIn } = useAuth();
-  const { navigate } = useRouter();
-  const [busy, setBusy] = useState<string | null>(null);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const pick = async (key: string) => {
-    setBusy(key);
-    setError(null);
-    try {
-      await signIn(key);
-      navigate(key === 'sysadmin' ? '/sources' : '/companies');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось войти. Попробуйте ещё раз.');
-      setBusy(null);
-    }
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setError(null);
+    try { await signIn(username.trim(), password); setPassword(''); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось войти.'); }
+    finally { setBusy(false); }
   };
-
-  return (
-    <div className="login">
-      <div className="login__card">
-        <div className="login__head">
-          <AlfaLogo size={44} />
-          <div>
-            <div className="login__brand">Альфа-Бизнес</div>
-            <div className="login__product">Alfa Business Insights · Радар</div>
-          </div>
-        </div>
-
-        <span className="login__stand"><span className="login__stand-dot" />Тестовый стенд</span>
-
-        <h1 className="login__title">Выберите тестового пользователя</h1>
-        <p className="login__lead">
-          Это демонстрационный стенд для хакатона: данные обезличены, вход без логина и пароля.
-          Пользователи заведены в Keycloak, в бою вход идёт через него.
-        </p>
-
-        {error && <div className="login__error" role="alert">{error}</div>}
-
-        <div className="login__roles">
-          {ROLES.map(({ key, title, sub, Icon }) => (
-            <button key={key} className="role" onClick={() => pick(key)} disabled={!!busy} aria-busy={busy === key}>
-              <span className="role__icon"><Icon width={24} height={24} color="var(--color-light-graphic-primary)" /></span>
-              <span className="role__text">
-                <span className="role__title">{title}</span>
-                <span className="role__sub">{busy === key ? 'Входим…' : sub}</span>
-              </span>
-              <ArrowRightMIcon width={20} height={20} color="var(--color-light-graphic-secondary)" />
-            </button>
-          ))}
-        </div>
-
-        <div className="login__foot">
-          <Button view="text" size={40} onClick={() => pick('director')} loading={busy === 'director'} disabled={!!busy}>
-            Войти как Андрей
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="login"><section className="login__story"><AlfaLogo size={48} /><span className="eyebrow">ALFA BUSINESS INSIGHTS</span><h1>События обретают смысл.</h1><p>Когда знаешь, как они связаны с твоим бизнесом.</p><div className="login__radar" aria-hidden="true"><span /><span /><span /></div></section><section className="login__card"><div className="eyebrow">ВАШ БИЗНЕС В КОНТЕКСТЕ</div><h2>Войти в Радар</h2><p className="login__lead">Новости, аналитика и решения для вашей компании.</p><form onSubmit={submit} aria-busy={busy}>{error && <div className="error-message" role="alert">{error}</div>}<label className="field"><span>Логин</span><input autoComplete="username" name="username" required autoFocus value={username} onChange={(e) => setUsername(e.target.value)} disabled={busy} /></label><label className="field"><span>Пароль</span><input autoComplete="current-password" name="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} /></label><button className="button button--primary login__submit" disabled={busy} type="submit">{busy ? 'Входим…' : 'Войти →'}</button></form><p className="login__foot">Используйте учётную запись вашей организации.</p></section></div>;
 }

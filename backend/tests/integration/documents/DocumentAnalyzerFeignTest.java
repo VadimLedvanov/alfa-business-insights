@@ -132,8 +132,12 @@ class DocumentAnalyzerFeignTest {
                         exchange.close();
                         return;
                     }
+                    String vector = java.util.Collections.nCopies(384, "0.1").toString();
                     byte[] response =
-                            "{\"embeddingModel\":\"stub-v1\",\"embeddingDimension\":8,\"stub\":true,\"embedding\":[1,0.5,0.25,0.125,0,0,0,0]}"
+                            ("{\"embeddingModel\":\"intfloat/multilingual-e5-small\","
+                                            + "\"embeddingDimension\":384,\"stub\":false,\"embedding\":"
+                                            + vector
+                                            + "}")
                                     .getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().add("Content-Type", "application/json");
                     exchange.sendResponseHeaders(200, response.length);
@@ -151,14 +155,19 @@ class DocumentAnalyzerFeignTest {
                             application -> {
                                 DocumentAnalyzer analyzer =
                                         application.getBean(DocumentAnalyzer.class);
-                                assertThat(analyzer.embed("ставка"))
-                                        .containsExactly(1f, 0.5f, 0.25f, 0.125f, 0f, 0f, 0f, 0f);
+                                DocumentAnalyzer.Embedding embedding = analyzer.embed("ставка");
+                                assertThat(embedding.embeddingModel())
+                                        .isEqualTo("intfloat/multilingual-e5-small");
+                                assertThat(embedding.embeddingDimension()).isEqualTo(384);
+                                assertThat(embedding.stub()).isFalse();
+                                assertThat(embedding.embedding()).hasSize(384).containsOnly(0.1f);
                                 unavailable.set(true);
                                 assertThatThrownBy(() -> analyzer.embed("ставка"))
                                         .isInstanceOf(FeignException.class);
                                 unavailable.set(false);
-                                assertThat(analyzer.embed("ставка"))
-                                        .containsExactly(1f, 0.5f, 0.25f, 0.125f, 0f, 0f, 0f, 0f);
+                                assertThat(analyzer.embed("ставка").embedding())
+                                        .hasSize(384)
+                                        .containsOnly(0.1f);
                             });
             // Проверка текста, переданного локальному embedding endpoint.
             assertThat(

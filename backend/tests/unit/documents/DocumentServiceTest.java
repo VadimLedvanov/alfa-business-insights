@@ -2,7 +2,10 @@ package alpha.business.insight.core.qa.documents.unit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -195,7 +198,7 @@ class DocumentServiceTest {
                         });
 
         TestEvidence.stepThrows(
-                "Вернуть 502 и удалить PDF после сбоя анализа",
+                "Вернуть 503 и удалить PDF при недоступности ML",
                 List.of(new TestEvidence.Input("Файл", fileDetails("rates.pdf"))),
                 () -> service.upload(file("rates.pdf"), null, null),
                 error -> {
@@ -204,12 +207,12 @@ class DocumentServiceTest {
                                     ResponseStatusException.class,
                                     actual ->
                                             assertThat(actual.getStatusCode())
-                                                    .isEqualTo(HttpStatus.BAD_GATEWAY));
+                                                    .isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
                     TestEvidence.output("Файлы после компенсации", regularFiles());
                     assertThat(regularFiles())
                             .as("файлы после компенсации сбоя анализатора")
                             .isEmpty();
-                    verify(vectors, never()).delete(any());
+                    verify(vectors, never()).delete(any(), anyString(), anyInt(), anyBoolean());
                     verify(repository, never()).saveAndFlush(any());
                 });
     }
@@ -269,7 +272,7 @@ class DocumentServiceTest {
                     assertThat(regularFiles())
                             .as("файлы после компенсации ошибки индексации")
                             .isEmpty();
-                    verify(vectors).delete(any());
+                    verify(vectors).delete(any(), anyString(), anyInt(), anyBoolean());
                     verify(repository, never()).saveAndFlush(any());
                 });
     }

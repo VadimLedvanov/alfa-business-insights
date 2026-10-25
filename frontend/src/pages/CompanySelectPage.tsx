@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
+import { api } from '../api/client';
+import type { CompanyListItem, Page } from '../api/types';
 import { Button } from '@alfalab/core-components/button';
 import { AppShell } from '../components/AppShell';
 import { LoadErr, initials } from '../components/common';
-import { useCompanies, useCompanyContext } from '../lib/useData';
+import { useCompanyContext } from '../lib/useData';
 import { useCompany } from '../app/company';
 import { useRouter } from '../app/router';
 import { bankProducts, companyIdLabel, foreignTradeLabel, revenueLabel } from '../lib/format';
@@ -9,9 +12,19 @@ import { InformationBanner } from '../components/InformationBanner';
 import './CompanySelectPage.css';
 
 export function CompanySelectPage() {
-  const { data, loading, error, reload } = useCompanies();
+  const [page, setPage] = useState(0);
+  const [data, setData] = useState<Page<CompanyListItem> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
+  const reload = () => setTick((n) => n + 1);
+  useEffect(() => {
+    let alive = true; setLoading(true); setError(null);
+    api.companies(page).then((value) => { if (alive) setData(value); }).catch((e) => { if (alive) setError(e.message); }).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [page, tick]);
   return (
-    <AppShell active="radar">
+    <AppShell active="companies">
       <div className="page-head">
         <div>
           <div className="eyebrow">BUSINESS INSIGHTS</div>
@@ -27,25 +40,28 @@ export function CompanySelectPage() {
 
       <LoadErr loading={loading} error={error} onRetry={reload}>
         <div className="companies-grid">
-          {(data ?? []).map((c) => <CompanyCard key={c.id} id={c.id} />)}
+          {(data?.content ?? []).map((c) => <CompanyCard key={c.companyId} id={c.companyId} />)}
         </div>
+      {data?.totalElements === 0 && <div className="empty">Нет доступных компаний.</div>}
       </LoadErr>
+      {data && data.totalPages > 1 && <div className="pagination"><button className="button" disabled={page === 0} onClick={() => setPage(page - 1)}>← Назад</button><span>{page + 1} / {data.totalPages}</span><button className="button" disabled={page + 1 >= data.totalPages} onClick={() => setPage(page + 1)}>Далее →</button></div>}
     </AppShell>
   );
 }
 
 function CompanyCard({ id }: { id: string }) {
-  const { data: ctx } = useCompanyContext(id);
+  const { data: ctx, loading, error, reload } = useCompanyContext(id);
   const { companyId, setCompany } = useCompany();
   const { navigate } = useRouter();
   const selected = companyId === id;
 
   const open = () => {
     setCompany(id);
-    navigate('/home');
+    navigate('/feed');
   };
 
-  if (!ctx) {
+  if (error) return <LoadErr loading={false} error={error} onRetry={reload}>{null}</LoadErr>;
+  if (loading || !ctx) {
     return <div className="card card--pad company-card"><div className="skeleton" style={{ height: 180 }} /></div>;
   }
   const p = ctx.profile;
