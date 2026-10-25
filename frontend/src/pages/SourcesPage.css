@@ -3,6 +3,13 @@
 .sources__hint{font-size:13px;line-height:1.6;color:#85888e;margin:0 0 18px}
 .sources__library-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .sources__drop{width:100%;display:flex;flex-direction:column;align-items:center;gap:12px;border:1px dashed #d8d9d5;border-radius:12px;background:#f8f8f5;padding:24px;text-align:center;cursor:pointer;margin:0 0 18px;color:#444}
+.sources__drop:disabled{opacity:.6;cursor:wait}
+.sources__spinner{width:14px;height:14px;margin-right:9px;border:2px solid #ffffff70;border-top-color:#fff;border-radius:50%;animation:sources-spin .7s linear infinite}
+.sources__uploading{display:flex;flex-direction:column;gap:8px;margin-top:14px;color:#666a6b;font-size:12px}
+.sources__progress{height:4px;overflow:hidden;border-radius:4px;background:#f2d5d2}
+.sources__progress>span{display:block;width:38%;height:100%;border-radius:inherit;background:#ef3124;animation:sources-progress 1.2s ease-in-out infinite}
+@keyframes sources-spin{to{transform:rotate(360deg)}}
+@keyframes sources-progress{0%{transform:translateX(-110%)}100%{transform:translateX(280%)}}
 .sources__drop-text{font-size:13px;color:#666a6b;overflow-wrap:anywhere}
 .sources__drop-btn{display:inline-flex;align-items:center;min-height:34px;padding:0 13px;border-radius:8px;background:#ecece8;font-size:13px;font-weight:500;color:#303333}
 .field{display:block;margin-bottom:15px}

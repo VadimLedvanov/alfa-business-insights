@@ -25,7 +25,6 @@ import java.time.LocalDate;
 import java.util.UUID;
 import java.util.List;
 import java.util.Map;
-import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -45,6 +44,9 @@ public class DocumentVectorStore {
      * Изолированная коллекция синтетических векторов stub-v1 размерности 8.
      */
     public static final String STUB_COLLECTION = "knowledge_documents_stub_v1";
+
+    /** Фиксированная коллекция векторов документов, загружаемых администратором. */
+    public static final String DOCUMENT_COLLECTION = "rag_documents";
 
     /**
      * gRPC-клиент Qdrant; подтверждение его операций ожидается синхронно.
@@ -108,12 +110,18 @@ public class DocumentVectorStore {
         return UUID.nameUUIDFromBytes((documentId + ":" + ordinal).getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Имя коллекции стабильно для каждой модели и размерности; stub сохраняет legacy имя. */
+    /** Возвращает фиксированную коллекцию админских документов или отдельную legacy-коллекцию stub. */
     public static String collectionName(String model, int dimension, boolean stub) {
-        if (stub && "stub-v1".equals(model) && dimension == 8) return STUB_COLLECTION;
-        String safeModel = model.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_").replaceAll("^_|_$", "");
-        if (safeModel.isBlank() || dimension < 1) throw new IllegalArgumentException("Invalid embedding collection metadata");
-        return "knowledge_documents_" + safeModel + "_" + dimension;
+        if (model == null || model.isBlank() || dimension < 1) {
+            throw new IllegalArgumentException("Invalid embedding collection metadata");
+        }
+        if (stub) {
+            if (!"stub-v1".equals(model) || dimension != 8) {
+                throw new IllegalArgumentException("Invalid stub embedding collection metadata");
+            }
+            return STUB_COLLECTION;
+        }
+        return DOCUMENT_COLLECTION;
     }
 
     /** Ищет только в коллекции совместимой модели и размерности. */

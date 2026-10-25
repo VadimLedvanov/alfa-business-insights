@@ -123,11 +123,12 @@ function UploadDocument({ onUploaded }: { onUploaded: (name: string) => void }) 
   };
 
   return <section className="card card--pad"><h2 className="sources__h2">Добавить PDF</h2><p className="sources__hint">Файл до 50 МБ будет сохранён и проиндексирован в базе знаний.</p>
-    <form onSubmit={(e) => void submit(e)}>
-      <button type="button" className="sources__drop" onClick={() => input.current?.click()}><DocumentMIcon width={28} height={28} /><span className="sources__drop-text">{file?.name ?? 'Выберите PDF с аналитикой банка'}</span><span className="sources__drop-btn">Выбрать файл</span></button>
-      <input key={inputKey} ref={input} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { setFile(e.target.files?.[0] ?? null); setError(null); }} />
+    <form onSubmit={(e) => void submit(e)} aria-busy={busy}>
+      <button type="button" className="sources__drop" disabled={busy} onClick={() => input.current?.click()}><DocumentMIcon width={28} height={28} /><span className="sources__drop-text">{file?.name ?? 'Выберите PDF с аналитикой банка'}</span><span className="sources__drop-btn">Выбрать файл</span></button>
+      <input key={inputKey} ref={input} type="file" accept="application/pdf,.pdf" hidden disabled={busy} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setError(null); }} />
       {error && <p className="sources__error" role="alert">{error}</p>}
-      <button className="button button--primary" disabled={busy}>{busy ? 'Загружаем…' : 'Загрузить'}</button>
+      <button className="button button--primary" disabled={busy}>{busy && <span className="sources__spinner" aria-hidden="true" />}{busy ? 'Загружаем…' : 'Загрузить'}</button>
+      {busy && <div className="sources__uploading" role="status" aria-live="polite"><span>Файл загружается и индексируется</span><span className="sources__progress"><span /></span></div>}
     </form>
   </section>;
 }
