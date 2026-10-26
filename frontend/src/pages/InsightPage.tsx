@@ -253,7 +253,7 @@ function InsightContent({ insight, onSource }: { insight: Insight; onSource: (so
     {insight.hypotheses.length > 0 && <TextList title="Гипотезы" items={insight.hypotheses.map((x) => x.text)}/>}
     {insight.actions.length > 0 && <TextList title="Что стоит сделать" items={insight.actions.map((x) => x.text)}/>}
     {insight.missing_data.length > 0 && <TextList title="Чего мы не знаем" items={insight.missing_data}/>}
-    {insight.sources.length > 0 && <section className="panel"><h2>Источники</h2>{insight.sources.map((source) => <Source key={source.fragment_id} source={source} onOpen={() => onSource(source)}/>)}</section>}
+    {insight.sources.length > 0 && <section className="panel"><h2>Источники</h2>{insight.sources.map((source) => <Source key={source.fragment_id} source={source} fragments={[...insight.facts, ...insight.bank_view].filter((f) => f.fragment_id === source.fragment_id).map((f) => f.text)} onOpen={() => onSource(source)}/>)}</section>}
   </>;
 }
 
@@ -274,7 +274,14 @@ function TextList({ title, items }: { title: string; items: string[] }) {
   return <section className="panel"><h2>{title}</h2>{items.map((item, i) => <p key={i}>{item}</p>)}</section>;
 }
 
-function Source({ source, onOpen }: { source: SourceRef; onOpen: () => void }) {
+function Source({ source, fragments, onOpen }: { source: SourceRef; fragments: string[]; onOpen: () => void }) {
+  const [open, setOpen] = useState(false);
   const label = source.document_id ? `PDF · ${source.document_id}${source.page ? ` · стр. ${source.page}` : ''}` : source.url || 'Текстовый источник';
-  return <div className="source-card"><span><strong>{label}</strong><small>{source.fragment_id}</small></span>{source.document_id ? <button className="button button--small" onClick={onOpen}>Просмотр PDF</button> : source.url && <a className="button button--small" href={source.url} target="_blank" rel="noreferrer">Открыть</a>}</div>;
+  return <div className={`source-card source-card--expandable${open ? ' source-card--open' : ''}`}>
+    <div className="source-card__row">
+      <button type="button" className="source-card__toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}><span><strong>{label}</strong><small>{source.fragment_id}</small></span><span className="source-card__chevron" aria-hidden="true">{open ? '▴' : '▾'}</span></button>
+      {source.document_id ? <button className="button button--small" onClick={onOpen}>Просмотр PDF</button> : source.url && <a className="button button--small" href={source.url} target="_blank" rel="noreferrer">Открыть</a>}
+    </div>
+    {open && <div className="source-card__text">{fragments.length > 0 ? fragments.map((text, i) => <p key={i}>{text}</p>) : <p className="panel__muted">Текст фрагмента недоступен.</p>}</div>}
+  </div>;
 }
