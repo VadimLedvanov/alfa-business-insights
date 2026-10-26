@@ -243,17 +243,23 @@ function PdfViewer({ blob, initialPage }: { blob: Blob; initialPage: number }) {
 
 function InsightContent({ insight, onSource }: { insight: Insight; onSource: (source: SourceRef) => void }) {
   const confidence = insight.ai_inference[0]?.confidence;
+  const [openFragment, setOpenFragment] = useState<string | null>(null);
+  const sourceOf = (fragmentId: string) => insight.sources.find((x) => x.fragment_id === fragmentId);
+  const showFragment = (fragmentId: string) => {
+    setOpenFragment(fragmentId);
+    window.setTimeout(() => document.getElementById(`src-${fragmentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  };
   return <>
     <SignificancePanel status={insight.significance ?? 'UNKNOWN'} reason={insight.significanceReason ?? null} />
-    {insight.facts.length > 0 && <section className="panel"><ProvenanceLabel kind="fact"/><h2>Что произошло</h2>{insight.facts.map((f) => <p key={f.fragment_id}>{f.text}</p>)}</section>}
-    <section className="panel"><ProvenanceLabel kind="bank"/><h2>Позиция банка</h2>{insight.bank_view.length > 0 ? insight.bank_view.map((f) => <p key={f.fragment_id}>{f.text}</p>) : <p className="panel__muted">Аналитики по этому событию нет.</p>}</section>
+    {insight.facts.length > 0 && <section className="panel"><ProvenanceLabel kind="fact"/><h2>Что произошло</h2>{insight.facts.map((f) => <div className="cited" key={f.fragment_id}><p>{f.text}</p><button type="button" className="cited__link" onClick={() => showFragment(f.fragment_id)}>Фрагмент {f.fragment_id}</button></div>)}</section>}
+    <section className="panel"><ProvenanceLabel kind="bank"/><h2>Позиция банка</h2>{insight.bank_view.length > 0 ? insight.bank_view.map((f) => { const src = sourceOf(f.fragment_id); return <div className="cited" key={f.fragment_id}><p>{f.text}</p>{src?.document_id ? <button type="button" className="cited__link" onClick={() => onSource(src)}>{sourceLabel(src)}</button> : <button type="button" className="cited__link" onClick={() => showFragment(f.fragment_id)}>Фрагмент {f.fragment_id}</button>}</div>; }) : <p className="panel__muted">Аналитики по этому событию нет.</p>}</section>
     {insight.ai_inference.length > 0 && <section className="panel panel--ai"><ProvenanceLabel kind="ai"/><h2>Почему это важно для вашей компании</h2>{insight.ai_inference.map((f, i) => <p key={i}>{f.text}</p>)}{confidence && <ConfidenceWord value={confidence} />}{insight.features_used.length > 0 && <div className="chips">{insight.features_used.map((feature) => <span className="tag" key={feature}>{feature}</span>)}</div>}</section>}
     {insight.risks.length > 0 && <TextList title="Возможные риски" items={insight.risks.map((x) => x.text)}/>}
     {insight.opportunities.length > 0 && <TextList title="Возможности" items={insight.opportunities.map((x) => x.text)}/>}
     {insight.hypotheses.length > 0 && <TextList title="Гипотезы" items={insight.hypotheses.map((x) => x.text)}/>}
     {insight.actions.length > 0 && <TextList title="Что стоит сделать" items={insight.actions.map((x) => x.text)}/>}
     {insight.missing_data.length > 0 && <TextList title="Чего мы не знаем" items={insight.missing_data}/>}
-    {insight.sources.length > 0 && <section className="panel"><h2>Источники</h2>{insight.sources.map((source) => <Source key={source.fragment_id} source={source} fragments={[...insight.facts, ...insight.bank_view].filter((f) => f.fragment_id === source.fragment_id).map((f) => f.text)} onOpen={() => onSource(source)}/>)}</section>}
+    {insight.sources.length > 0 && <section className="panel"><h2>Источники</h2>{insight.sources.map((source) => <Source key={source.fragment_id} source={source} open={openFragment === source.fragment_id} onToggle={() => setOpenFragment(openFragment === source.fragment_id ? null : source.fragment_id)} fragments={[...insight.facts, ...insight.bank_view].filter((f) => f.fragment_id === source.fragment_id).map((f) => f.text)} onOpen={() => onSource(source)}/>)}</section>}
   </>;
 }
 
@@ -274,12 +280,15 @@ function TextList({ title, items }: { title: string; items: string[] }) {
   return <section className="panel"><h2>{title}</h2>{items.map((item, i) => <p key={i}>{item}</p>)}</section>;
 }
 
-function Source({ source, fragments, onOpen }: { source: SourceRef; fragments: string[]; onOpen: () => void }) {
-  const [open, setOpen] = useState(false);
-  const label = source.document_id ? `PDF · ${source.document_id}${source.page ? ` · стр. ${source.page}` : ''}` : source.url || 'Текстовый источник';
-  return <div className={`source-card source-card--expandable${open ? ' source-card--open' : ''}`}>
+function sourceLabel(source: SourceRef): string {
+  return source.document_id ? `PDF · ${source.document_id}${source.page ? ` · стр. ${source.page}` : ''}` : source.url || 'Текстовый источник';
+}
+
+function Source({ source, fragments, open, onToggle, onOpen }: { source: SourceRef; fragments: string[]; open: boolean; onToggle: () => void; onOpen: () => void }) {
+  const label = sourceLabel(source);
+  return <div id={`src-${source.fragment_id}`} className={`source-card source-card--expandable${open ? ' source-card--open' : ''}`}>
     <div className="source-card__row">
-      <button type="button" className="source-card__toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}><span><strong>{label}</strong><small>{source.fragment_id}</small></span><span className="source-card__chevron" aria-hidden="true">{open ? '▴' : '▾'}</span></button>
+      <button type="button" className="source-card__toggle" aria-expanded={open} onClick={onToggle}><span><strong>{label}</strong><small>{source.fragment_id}</small></span><span className="source-card__chevron" aria-hidden="true">{open ? '▴' : '▾'}</span></button>
       {source.document_id ? <button className="button button--small" onClick={onOpen}>Просмотр PDF</button> : source.url && <a className="button button--small" href={source.url} target="_blank" rel="noreferrer">Открыть</a>}
     </div>
     {open && <div className="source-card__text">{fragments.length > 0 ? fragments.map((text, i) => <p key={i}>{text}</p>) : <p className="panel__muted">Текст фрагмента недоступен.</p>}</div>}

@@ -148,3 +148,9 @@ a.source-card:hover { border-color: var(--color-light-border-primary); }
 .source-card__text p { margin: 0 0 8px; font-size: 14px; line-height: 20px; }
 .source-card__text p:last-child { margin-bottom: 0; }
 .source-card--expandable + .source-card--expandable { margin-top: 10px; }
+
+.cited { margin-bottom: 12px; }
+.cited:last-child { margin-bottom: 0; }
+.cited p { margin: 0 0 6px; }
+.cited__link { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; line-height: 16px; color: var(--color-light-text-secondary); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; word-break: break-all; text-align: left; }
+.cited__link:hover { color: var(--color-light-text-primary); }
