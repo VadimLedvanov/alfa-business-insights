@@ -1,5 +1,6 @@
 package alpha.business.insight.core.insight;
 
+import static io.qdrant.client.ConditionFactory.matchKeyword;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.isEmptyString;
@@ -10,6 +11,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -17,6 +19,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 
 import alpha.business.insight.core.ml.ComponentUnavailableException;
 import alpha.business.insight.core.ml.DocumentAnalysis;
+import alpha.business.insight.core.ml.DocumentAnalyzer;
+import alpha.business.insight.core.ml.DocumentChunk;
 import alpha.business.insight.core.ml.LlmClient;
 import alpha.business.insight.core.ml.StubDocumentAnalyzer;
 import alpha.business.insight.core.model.KnowledgeDocument;
@@ -25,9 +29,14 @@ import alpha.business.insight.core.repository.DocumentRepository;
 import alpha.business.insight.core.service.DocumentVectorStore;
 import io.qameta.allure.Allure;
 import io.qameta.allure.Step;
+import io.qdrant.client.QdrantClient;
+import io.qdrant.client.grpc.Common.Filter;
+import io.qdrant.client.grpc.Points.SearchPoints;
+import io.qdrant.client.grpc.Points.WithPayloadSelector;
 import io.restassured.module.mockmvc.specification.MockMvcRequestSpecification;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -38,9 +47,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -98,6 +109,8 @@ class InsightApiIntegrationTest {
     @MockitoBean JwtDecoder decoder;
     @MockitoSpyBean LlmClient llm;
     @Autowired DocumentVectorStore vectors;
+    @Autowired QdrantClient qdrant;
+    @Autowired ApplicationContext applicationContext;
     @MockitoSpyBean StubDocumentAnalyzer analyzer;
     @Autowired DocumentRepository documents;
     String company;
@@ -439,12 +452,15 @@ class InsightApiIntegrationTest {
         // Действие
         JsonNode result = generate();
 
-        // Проверки: неподтверждённые данные удалены, а текст исходного фрагмента не сохранён.
+        // Проверки: неподтверждённые данные удалены, а без цитат список источников пуст.
         assertThat(result.path("bank_view").isEmpty()).isTrue();
         assertThat(result.path("facts").isEmpty()).isTrue();
-        assertThat(result.path("sources").toString())
-                .contains(fragmentId, "#page=1")
-                .doesNotContain(fragmentText);
+        assertThat(result.path("sources").isArray())
+                .as("sources должен присутствовать как JSON-массив: %s", result.path("sources"))
+                .isTrue();
+        assertThat(result.path("sources").isEmpty())
+                .as("нет источников, поскольку ни одно утверждение не прошло проверку")
+                .isTrue();
         assertThat(result.path("sources").findValues("text")).isEmpty();
         assertThat(
                         jdbc.queryForObject(
@@ -453,6 +469,202 @@ class InsightApiIntegrationTest {
                                 company))
                 .doesNotContain(fragmentText, "Ставка снижена");
         assertThat(result.path("missing_data").toString()).contains("банк", "STUB");
+    }
+
+    /** Передаёт LLM только Qdrant-фрагменты с оценкой не ниже настроенного порога. */
+    @Test
+    @Step("Фильтрует фрагменты Qdrant по минимальной оценке сходства")
+    void TestIntegrationQdrantScoreThreshold() throws Exception {
+        // Подготовка: три контролируемых вектора дают оценки 0.65, 0.66 и 0.64 для запроса [1, 0].
+        UUID documentId = UUID.randomUUID();
+        float boundaryX = 0.65f;
+        float boundaryY = (float) Math.sqrt(1 - boundaryX * boundaryX);
+        float aboveX = 0.66f;
+        float belowX = 0.64f;
+        List<Float> query = List.of(1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f);
+        UUID boundaryId = DocumentVectorStore.chunkId(documentId, 0);
+        UUID aboveId = DocumentVectorStore.chunkId(documentId, 1);
+        UUID belowId = DocumentVectorStore.chunkId(documentId, 2);
+        List<DocumentChunk> chunks =
+                List.of(
+                        new DocumentChunk(
+                                0,
+                                1,
+                                "Граничный фрагмент",
+                                List.of(boundaryX, boundaryY, 0f, 0f, 0f, 0f, 0f, 0f)),
+                        new DocumentChunk(
+                                1,
+                                2,
+                                "Фрагмент выше порога",
+                                List.of(
+                                        aboveX,
+                                        (float) Math.sqrt(1 - aboveX * aboveX),
+                                        0f,
+                                        0f,
+                                        0f,
+                                        0f,
+                                        0f,
+                                        0f)),
+                        new DocumentChunk(
+                                2,
+                                3,
+                                "Фрагмент ниже порога",
+                                List.of(
+                                        belowX,
+                                        (float) Math.sqrt(1 - belowX * belowX),
+                                        0f,
+                                        0f,
+                                        0f,
+                                        0f,
+                                        0f,
+                                        0f)));
+        DocumentAnalysis analysis = new DocumentAnalysis(documentId, 1, true, "stub-v1", 8, chunks);
+        vectors.index(analysis, null, System.nanoTime() + Duration.ofSeconds(10).toNanos());
+        documents.saveAndFlush(
+                new KnowledgeDocument(
+                        documentId,
+                        "Контролируемые векторы",
+                        "controlled.pdf",
+                        "controlled.pdf",
+                        1,
+                        "0".repeat(64),
+                        Instant.now(),
+                        null,
+                        chunks.size(),
+                        1,
+                        "stub-v1",
+                        8,
+                        true));
+
+        // Действие: проверяет фактическую оценку границы Qdrant и затем запускает генерацию.
+        Allure.step(
+                "1. Сверить вход Qdrant и точную оценку граничного фрагмента",
+                () -> {
+                    assertThat(applicationContext.getBeanProvider(ChatModel.class).getIfAvailable())
+                            .as("модель чата отключена: тест не должен вызывать внешнюю LLM")
+                            .isNull();
+                    List<io.qdrant.client.grpc.Points.ScoredPoint> scored =
+                            qdrant.searchAsync(
+                                            SearchPoints.newBuilder()
+                                                    .setCollectionName(
+                                                            DocumentVectorStore.STUB_COLLECTION)
+                                                    .addAllVector(query)
+                                                    .setFilter(
+                                                            Filter.newBuilder()
+                                                                    .addMust(
+                                                                            matchKeyword(
+                                                                                    "documentId",
+                                                                                    documentId
+                                                                                            .toString()))
+                                                                    .build())
+                                                    .setLimit(10)
+                                                    .setWithPayload(
+                                                            WithPayloadSelector.newBuilder()
+                                                                    .setEnable(true))
+                                                    .build())
+                                    .get(5, TimeUnit.SECONDS);
+                    Allure.addAttachment(
+                            "Вход и оценки Qdrant",
+                            "text/plain",
+                            "query="
+                                    + query
+                                    + "\n"
+                                    + scored.stream()
+                                            .map(
+                                                    point ->
+                                                            point.getId().getUuid()
+                                                                    + "="
+                                                                    + point.getScore())
+                                            .toList());
+                    for (var expected :
+                            java.util.Map.of(boundaryId, 0.65f, aboveId, 0.66f, belowId, 0.64f)
+                                    .entrySet()) {
+                        assertThat(
+                                        scored.stream()
+                                                .filter(
+                                                        point ->
+                                                                point.getId()
+                                                                        .getUuid()
+                                                                        .equals(
+                                                                                expected.getKey()
+                                                                                        .toString()))
+                                                .findFirst()
+                                                .orElseThrow()
+                                                .getScore())
+                                .as(
+                                        "фактическая оценка фрагмента %s, ожидалось %s",
+                                        expected.getKey(), expected.getValue())
+                                .isEqualTo(expected.getValue());
+                    }
+                });
+        doReturn(new DocumentAnalyzer.Embedding("stub-v1", 8, true, query))
+                .when(analyzer)
+                .embedding(any());
+        java.util.Map<String, List<String>> promptFragments =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        doAnswer(
+                        invocation -> {
+                            String stage = invocation.getArgument(0);
+                            ObjectNode input = invocation.getArgument(1);
+                            promptFragments.put(
+                                    stage,
+                                    input.path("external_data")
+                                            .path("fragments")
+                                            .findValuesAsString("fragment_id"));
+                            return invocation.callRealMethod();
+                        })
+                .when(llm)
+                .complete(anyString(), any());
+        Allure.step(
+                "2. Проверить фрагменты во всех промптах LLM",
+                () -> {
+                    Allure.addAttachment(
+                            "Ожидаемые fragment_id",
+                            "text/plain",
+                            "граница=" + boundaryId + "\nвыше=" + aboveId + "\nниже=" + belowId);
+                    generate();
+                    Allure.addAttachment(
+                            "Фрагменты в контексте стадий LLM",
+                            "text/plain",
+                            promptFragments.toString());
+                    org.junit.jupiter.api.Assertions.assertAll(
+                            () ->
+                                    verifyThresholdContext(
+                                            "draft",
+                                            promptFragments.get("draft"),
+                                            belowId,
+                                            boundaryId,
+                                            aboveId),
+                            () ->
+                                    verifyThresholdContext(
+                                            "critic",
+                                            promptFragments.get("critic"),
+                                            belowId,
+                                            boundaryId,
+                                            aboveId),
+                            () ->
+                                    verifyThresholdContext(
+                                            "revision",
+                                            promptFragments.get("revision"),
+                                            belowId,
+                                            boundaryId,
+                                            aboveId));
+                });
+    }
+
+    /** Проверяет строгий порог в конкретной стадии, сохраняя независимые ошибки всех стадий. */
+    @Step("Проверить контекст стадии {stage}: 0.64 и 0.65 исключены, 0.66 передан")
+    private void verifyThresholdContext(
+            String stage, List<String> fragments, UUID below, UUID boundary, UUID above) {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () ->
+                        assertThat(fragments)
+                                .as("%s: оценки 0.64 и 0.65 исключены", stage)
+                                .doesNotContain(below.toString(), boundary.toString()),
+                () ->
+                        assertThat(fragments)
+                                .as("%s: оценка 0.66 передана", stage)
+                                .contains(above.toString()));
     }
 
     /** Не сохраняет инсайт при ошибке LLM. */

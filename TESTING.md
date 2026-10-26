@@ -3,6 +3,8 @@
 Тесты находятся в [`backend/tests/`](backend/tests/README.md).
 Требуются Java 21, Maven и Docker; unit-тестам Docker не нужен.
 Python ML проверяется через pytest и настоящий PDF-парсер; embeddings локальные `stub-v1`.
+OCR-проверкам нужны Tesseract и языки rus+eng: они уже включены в `ml/Dockerfile`.
+Если запускаешь pytest прямо на машине, установи эти зависимости; отсутствие OCR считается ошибкой окружения, не успешным тестом.
 Frontend пока не покрыт. Внешняя нейросеть не вызывается.
 
 ```bash

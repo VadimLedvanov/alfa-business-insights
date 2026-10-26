@@ -5,6 +5,7 @@ import static alpha.business.insight.core.service.DocumentVectorStore.chunkId;
 import static io.qdrant.client.ConditionFactory.matchKeyword;
 import static io.qdrant.client.PointIdFactory.id;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import alpha.business.insight.core.qa.helpers.SizedPdfFixtures;
 import alpha.business.insight.core.qa.helpers.SyntheticPdf;
@@ -20,6 +21,8 @@ import io.qdrant.client.grpc.Common.Filter;
 import io.qdrant.client.grpc.JsonWithInt.Value;
 import io.qdrant.client.grpc.Points.RetrievedPoint;
 import io.qdrant.client.grpc.Points.UpdateStatus;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,6 +32,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -81,6 +85,8 @@ class RealMlDocumentIntegrationTest extends RealStackE2eTest {
     private String storagePath;
 
     private UUID documentId;
+
+    private final List<UUID> documentIdsForCleanup = new ArrayList<>();
 
     static {
         PYTHON_ML.start();
@@ -175,6 +181,277 @@ class RealMlDocumentIntegrationTest extends RealStackE2eTest {
                     verifyIndexedPages(documentId, pageTexts);
                     verifyDownloadedOriginal(documentId, token, pdf);
                 });
+    }
+
+    /** Проверяет OCR скана через backend и повторную загрузку с теми же байтами PDF. */
+    @Test
+    void TestIntegrationUploadMixedTextAndScannedPdfThroughRealPython() throws Exception {
+        Path fixture =
+                mlDirectory()
+                        .getParent()
+                        .resolve("backend/tests/fixtures/pdf/ocr-mixed-text-and-scan.pdf");
+        byte[] pdf = Files.readAllBytes(fixture);
+        String expectedSha256 = sha256(pdf);
+        List<SyntheticPdf.MultipartUpload> uploads =
+                List.of(
+                        new SyntheticPdf.MultipartUpload(
+                                "ocr-mixed-text-and-scan-first.pdf",
+                                "application/pdf",
+                                pdf,
+                                "2026-10-26",
+                                "Синтетический текстовый лист и отсканированный лист на английском"),
+                        new SyntheticPdf.MultipartUpload(
+                                "ocr-mixed-text-and-scan-repeat.pdf",
+                                "application/pdf",
+                                pdf,
+                                "2026-10-26",
+                                "Повторная загрузка тех же байтов для проверки OCR cache"));
+
+        Allure.step(
+                "Индексировать текстовую страницу и скан через backend и реальный Python ML",
+                () -> {
+                    String token =
+                            Allure.step(
+                                    "Получить JWT системного администратора",
+                                    () -> keycloak.accessToken("sysadmin", "sysadmin-dev"));
+                    List<UUID> uploadedIds = new ArrayList<>();
+                    for (SyntheticPdf.MultipartUpload upload : uploads) {
+                        var response =
+                                TestEvidence.step(
+                                        "Загрузить " + upload.filename(),
+                                        List.of(
+                                                new TestEvidence.Input("PDF", pdf),
+                                                new TestEvidence.Input(
+                                                        "SHA-256 одинаковых байтов",
+                                                        expectedSha256),
+                                                new TestEvidence.Input(
+                                                        "Имя файла", upload.filename())),
+                                        () -> {
+                                            var actual =
+                                                    backend.postMultipart(
+                                                            "/admin/documents", upload, token);
+                                            recordDocumentIdForCleanup(actual);
+                                            return actual;
+                                        },
+                                        actual -> {
+                                            TestEvidence.output(
+                                                    "Фактический ответ загрузки",
+                                                    Map.of(
+                                                            "status",
+                                                            actual.statusCode(),
+                                                            "body",
+                                                            actual.asString()));
+                                            assertThat(actual.statusCode()).isEqualTo(201);
+                                            var metadata = json(actual);
+                                            assertThat(documentId).isNotNull();
+                                            assertThat(metadata.path("fileName").asText())
+                                                    .isEqualTo(upload.filename());
+                                            assertThat(metadata.path("sizeBytes").asLong())
+                                                    .isEqualTo(pdf.length);
+                                            assertThat(metadata.path("sha256").asText())
+                                                    .isEqualTo(expectedSha256);
+                                            assertThat(metadata.path("stub").asBoolean()).isTrue();
+                                            assertThat(metadata.path("embeddingModel").asText())
+                                                    .isEqualTo("stub-v1");
+                                            assertThat(metadata.path("embeddingDimension").asInt())
+                                                    .isEqualTo(8);
+                                            assertThat(metadata.path("chunkCount").asInt())
+                                                    .isEqualTo(2);
+                                            assertThat(actual.getHeader(HttpHeaders.LOCATION))
+                                                    .contains(documentId.toString());
+                                            assertThat(
+                                                            jdbc.queryForObject(
+                                                                    "SELECT COUNT(*) FROM documents WHERE id = ?",
+                                                                    Long.class,
+                                                                    documentId))
+                                                    .isEqualTo(1L);
+                                        });
+
+                        UUID uploadedId = documentId;
+                        uploadedIds.add(uploadedId);
+                        assertThat(uploadedIds).doesNotHaveDuplicates();
+                        verifyPersistedMetadata(uploadedId, token, response);
+                        verifyOcrPages(uploadedId);
+                        verifyDownloadedOriginal(uploadedId, token, pdf);
+                        assertThat(
+                                        jdbc.queryForObject(
+                                                "SELECT sha256 FROM documents WHERE id = ?",
+                                                String.class,
+                                                uploadedId))
+                                .isEqualTo(expectedSha256);
+                    }
+
+                    assertThat(uploadedIds).hasSize(2).doesNotHaveDuplicates();
+                    TestEvidence.step(
+                            "Проверить, что Python создал OCR cache для исходного PDF",
+                            List.of(
+                                    new TestEvidence.Input("SHA-256 PDF", expectedSha256),
+                                    new TestEvidence.Input(
+                                            "Документы с одинаковыми байтами", uploadedIds)),
+                            () ->
+                                    PYTHON_ML.execInContainer(
+                                            "sh",
+                                            "-c",
+                                            "test -s /tmp/ml-ocr-cache/"
+                                                    + expectedSha256
+                                                    + ".json"),
+                            actual -> assertThat(actual.getExitCode()).isZero());
+                });
+    }
+
+    /** Проверяет русский текстовый слой и ключевые слова OCR на физической странице 2. */
+    private void verifyOcrPages(UUID uploadedId) throws Exception {
+        List<String> pageTexts = new ArrayList<>();
+        for (int ordinal = 0; ordinal < 2; ordinal++) {
+            int expectedOrdinal = ordinal;
+            var points =
+                    qdrant.retrieveAsync(
+                                    STUB_COLLECTION,
+                                    id(chunkId(uploadedId, expectedOrdinal)),
+                                    true,
+                                    true,
+                                    null)
+                            .get(10, TimeUnit.SECONDS);
+            assertThat(points)
+                    .as("Один Qdrant point для документа %s, ordinal %s", uploadedId, ordinal)
+                    .hasSize(1);
+            Map<String, Value> payload = points.getFirst().getPayloadMap();
+            TestEvidence.output("Фактический OCR payload Qdrant", payloadEvidence(payload));
+            assertThat(payload.get("documentId").getStringValue()).isEqualTo(uploadedId.toString());
+            assertThat(payload.get("page").getIntegerValue()).isEqualTo(ordinal + 1L);
+            assertThat(payload.get("ordinal").getIntegerValue()).isEqualTo(ordinal);
+            assertThat(payload.get("embeddingModel").getStringValue()).isEqualTo("stub-v1");
+            assertThat(payload.get("stub").getBoolValue()).isTrue();
+            var vector = points.getFirst().getVectors().getVector().getDense();
+            List<Float> vectorValues = vector.getDataList();
+            TestEvidence.output("Вектор страницы из Qdrant", vectorValues);
+            assertThat(vector.getDataCount()).isEqualTo(8);
+            assertThat(vectorValues)
+                    .allSatisfy(value -> assertThat(Float.isFinite(value)).isTrue());
+            double normSquared =
+                    vectorValues.stream().mapToDouble(value -> (double) value * value).sum();
+            assertThat(normSquared).isCloseTo(1.0, within(0.00001));
+            assertThat(vectorValues.get(1) / vectorValues.get(0)).isCloseTo(0.5f, within(0.0001f));
+            assertThat(vectorValues.get(2) / vectorValues.get(0)).isCloseTo(0.25f, within(0.0001f));
+            assertThat(vectorValues.get(3) / vectorValues.get(0))
+                    .isCloseTo(0.125f, within(0.0001f));
+            assertThat(vectorValues.subList(4, 8)).containsOnly(0.0f);
+            pageTexts.add(payload.get("text").getStringValue());
+        }
+
+        String textPage = normalizePageText(pageTexts.getFirst());
+        String scannedPage = normalizePageText(pageTexts.get(1));
+        assertThat(textPage)
+                .contains("синтетический отчёт", "120 миллионов рублей", "стабильный рост бизнеса");
+        assertThat(scannedPage)
+                .contains("scanned page two", "120 million rubles", "45 million rubles", "7314");
+    }
+
+    private static String normalizePageText(String text) {
+        return text.replace('\u00a0', ' ').replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    /** Проверяет отказ реального Python ML для PDF с паролем и отсутствие побочных эффектов. */
+    @Test
+    void TestIntegrationRejectPasswordProtectedPdfWithoutArtifacts() throws Exception {
+        Path fixture =
+                mlDirectory()
+                        .getParent()
+                        .resolve("backend/tests/fixtures/pdf/ocr-password-protected.pdf");
+        byte[] pdf = Files.readAllBytes(fixture);
+        String fileName = "ocr-password-protected.pdf";
+        var upload =
+                new SyntheticPdf.MultipartUpload(
+                        fileName,
+                        "application/pdf",
+                        pdf,
+                        "2026-10-26",
+                        "Синтетический PDF зашифрован паролем для проверки отказа OCR pipeline");
+        Map<String, Long> storageBefore = snapshotStoredFiles();
+        long documentRowsBefore =
+                jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM documents WHERE file_name = ?", Long.class, fileName);
+        long qdrantPointsBefore = snapshotStubPointCount();
+
+        Allure.step(
+                "Отклонить защищённый паролем PDF через backend и реальный Python ML",
+                () -> {
+                    String token =
+                            Allure.step(
+                                    "Получить JWT системного администратора",
+                                    () -> keycloak.accessToken("sysadmin", "sysadmin-dev"));
+                    var response =
+                            TestEvidence.step(
+                                    "Отправить зашифрованный PDF",
+                                    List.of(
+                                            new TestEvidence.Input("PDF", pdf),
+                                            new TestEvidence.Input("Имя файла", fileName)),
+                                    () -> backend.postMultipart("/admin/documents", upload, token),
+                                    actual ->
+                                            TestEvidence.output(
+                                                    "Фактический ответ отказа ML",
+                                                    Map.of(
+                                                            "status",
+                                                            actual.statusCode(),
+                                                            "body",
+                                                            actual.asString())));
+
+                    assertThat(response.statusCode()).isEqualTo(422);
+                    assertThat(response.jsonPath().getBoolean("retryable")).isFalse();
+                    assertThat(response.jsonPath().getString("message")).contains("извлечь текст");
+
+                    TestEvidence.step(
+                            "Проверить отсутствие документов, файлов и точек после отказа",
+                            List.of(
+                                    new TestEvidence.Input("Имя файла", fileName),
+                                    new TestEvidence.Input(
+                                            "Строки PostgreSQL до запроса", documentRowsBefore),
+                                    new TestEvidence.Input(
+                                            "Qdrant points до запроса", qdrantPointsBefore),
+                                    new TestEvidence.Input("Файлы до запроса", storageBefore)),
+                            () ->
+                                    Map.of(
+                                            "documentRows",
+                                            jdbc.queryForObject(
+                                                    "SELECT COUNT(*) FROM documents WHERE file_name = ?",
+                                                    Long.class,
+                                                    fileName),
+                                            "qdrantPoints",
+                                            snapshotStubPointCount(),
+                                            "storageFiles",
+                                            snapshotStoredFiles()),
+                            actual -> {
+                                assertThat(actual.get("documentRows"))
+                                        .isEqualTo(documentRowsBefore);
+                                assertThat(actual.get("qdrantPoints"))
+                                        .isEqualTo(qdrantPointsBefore);
+                                assertThat(actual.get("storageFiles")).isEqualTo(storageBefore);
+                            });
+                });
+    }
+
+    /** Возвращает число точек в stub-коллекции, сохраняя отсутствие коллекции как ноль. */
+    private long snapshotStubPointCount() throws Exception {
+        if (!qdrant.collectionExistsAsync(STUB_COLLECTION, Duration.ofSeconds(10))
+                .get(10, TimeUnit.SECONDS)) {
+            return 0;
+        }
+        return RestAssured.given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("exact", true))
+                .post(
+                        "http://"
+                                + QDRANT.getHost()
+                                + ":"
+                                + QDRANT.getMappedPort(6333)
+                                + "/collections/"
+                                + STUB_COLLECTION
+                                + "/points/count")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getLong("result.count");
     }
 
     /** Проверяет обработку опубликованного отчёта ЦБ, извлечённый текст и исходный PDF. */
@@ -761,42 +1038,49 @@ class RealMlDocumentIntegrationTest extends RealStackE2eTest {
             } catch (RuntimeException missingOrInvalidLocation) {
                 documentId = UUID.fromString(json(response).path("documentId").asText());
             }
+            if (!documentIdsForCleanup.contains(documentId)) {
+                documentIdsForCleanup.add(documentId);
+            }
         }
     }
 
-    /** Удаляет только артефакты UUID, созданного позитивным сценарием. */
+    /** Удаляет только артефакты документов, загруженных позитивными сценариями. */
     @AfterEach
     void removeUploadedArtifacts() throws Exception {
-        if (documentId == null) return;
+        if (documentIdsForCleanup.isEmpty()) return;
 
-        // Очистка: удалить артефакты только UUID, полученного от успешной загрузки.
-        UUID idToDelete = documentId;
         Allure.step(
-                "Удалить тестовые точки Qdrant, строку PostgreSQL и PDF",
+                "Удалить артефакты загруженных тестовых документов",
                 () -> {
-                    try {
-                        if (qdrant.collectionExistsAsync(STUB_COLLECTION, Duration.ofSeconds(10))
-                                .get(10, TimeUnit.SECONDS)) {
-                            Filter filter =
-                                    Filter.newBuilder()
-                                            .addMust(
-                                                    matchKeyword(
-                                                            "documentId", idToDelete.toString()))
-                                            .build();
-                            var deletion =
-                                    qdrant.deleteAsync(
-                                                    STUB_COLLECTION, filter, Duration.ofSeconds(10))
-                                            .get(10, TimeUnit.SECONDS);
-                            assertThat(deletion.getStatus()).isEqualTo(UpdateStatus.Completed);
-                        }
-                    } finally {
+                    for (UUID idToDelete : documentIdsForCleanup) {
                         try {
-                            storage.delete(storage.relativePath(idToDelete));
+                            if (qdrant.collectionExistsAsync(
+                                            STUB_COLLECTION, Duration.ofSeconds(10))
+                                    .get(10, TimeUnit.SECONDS)) {
+                                Filter filter =
+                                        Filter.newBuilder()
+                                                .addMust(
+                                                        matchKeyword(
+                                                                "documentId",
+                                                                idToDelete.toString()))
+                                                .build();
+                                var deletion =
+                                        qdrant.deleteAsync(
+                                                        STUB_COLLECTION,
+                                                        filter,
+                                                        Duration.ofSeconds(10))
+                                                .get(10, TimeUnit.SECONDS);
+                                assertThat(deletion.getStatus()).isEqualTo(UpdateStatus.Completed);
+                            }
                         } finally {
                             try {
-                                jdbc.update("DELETE FROM documents WHERE id = ?", idToDelete);
+                                storage.delete(storage.relativePath(idToDelete));
                             } finally {
-                                removeEmptyDocumentStorageDirectories(idToDelete);
+                                try {
+                                    jdbc.update("DELETE FROM documents WHERE id = ?", idToDelete);
+                                } finally {
+                                    removeEmptyDocumentStorageDirectories(idToDelete);
+                                }
                             }
                         }
                     }

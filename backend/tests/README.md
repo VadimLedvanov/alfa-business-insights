@@ -210,3 +210,12 @@ Allure группирует тесты по уровню и функционал
 ```bash
 mvn -B -ntp -f backend/tests/pom.xml test -Plocal-report '-Dtest=RealMlDocumentIntegrationTest#TestIntegrationPdfUploadSizeBoundaries'
 ```
+
+
+## Новые сквозные контуры
+
+- `e2e/events/NewsIngestionHttpE2eTest`: локальный RSS → настоящий Python → job backend → PostgreSQL → HTTP-чтение; повтор без дублей и отказ одного источника.
+- `integration/documents/RealMlDocumentIntegrationTest`: текст + скан → OCR → Qdrant → метаданные и оригинал; повторная загрузка и отказ зашифрованного PDF без новых артефактов.
+- `e2e/events/RankingHttpE2eTest` и `ml/tests/test_integration_ranking_api.py`: кредит/депозит, контрагенты, объяснения, свежесть, разнообразие и границы API. Используют production-изменения PR #72 (`/rank`), уже вошедшие в dev `1048e27`.
+
+Все три контура запускаются стандартными Maven/pytest командами. Внешняя LLM отключена; RSS тестов локальный. Вызов job в тесте ручной, длительные интервалы расписания не ожидаются. Параллельность проверяется на уровне классов, методы с общим состоянием последовательны.

@@ -193,6 +193,9 @@ def ml_http(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureReq
     log_path = tmp_path_factory.mktemp("ml-uvicorn") / "server.log"
     env = os.environ.copy()
     env["ML_EMBEDDER"] = "stub"
+    ocr_cache_dir = tmp_path_factory.mktemp("ml-ocr-cache")
+    env["ML_OCR_CACHE_DIR"] = str(ocr_cache_dir)
+    request.config._ml_ocr_cache_dir = ocr_cache_dir
     log_file = log_path.open("w", encoding="utf-8")
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
@@ -203,7 +206,7 @@ def ml_http(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureReq
     )
     request.config._ml_server_log = log_path
     request.config._ml_server_process = process
-    client = httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=5.0)
+    client = httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=30.0)
     deadline = time.monotonic() + HEALTH_TIMEOUT_SECONDS
     try:
         while time.monotonic() < deadline:
@@ -450,11 +453,11 @@ def test_integration_text_preserves_numbers_negation_and_units(ml_http: httpx.Cl
 @allure.description("""Шаги:
 1. Передать PDF с читаемой текстовой страницей и значимой страницей-сканом.
 1.1. Отправить исходный документ в analyze endpoint.
-1.2. Проверить, что страница 2 распознана с контрольными числами либо анализ явно отклонён.
+1.2. Проверить текст обеих страниц и контрольные числа со страницы-скана.
 
-Ожидание: OCR может вернуть 200 только с содержимым скана на физической странице 2; иначе ожидается явная ошибка HTTP 400/422 с причиной. Страница 2 не должна молча теряться.""")
+Ожидание: API возвращает HTTP 200, сохраняет текстовую страницу 1 и распознаёт контрольные факты со скана на физической странице 2.""")
 def test_integration_mixed_pdf_never_silently_drops_scan_page(ml_http: httpx.Client) -> None:
-    """Разрешает OCR-успех только при наличии проверяемого текста физической страницы-скана."""
+    """Требует OCR-успеха и проверяет текст обеих физических страниц."""
     document_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     pdf = _make_mixed_text_image_pdf()
     headers = {"Content-Type": "application/pdf", "Accept": "application/json"}
@@ -462,27 +465,29 @@ def test_integration_mixed_pdf_never_silently_drops_scan_page(ml_http: httpx.Cli
         with allure.step("1.1. Передать PDF с текстовой страницей и сканом"):
             response = ml_http.post(f"/documents/{document_id}/analyze", content=pdf, headers=headers)
             _attach_exchange("Текстовая страница и скан", pdf, response)
-        with allure.step("1.2. Проверить содержимое скана либо явную причину отказа"):
-            if response.status_code in {400, 422}:
-                _assert_status_in(response, {400, 422}, "Нераспознанный значимый скан допускает явный отказ")
-                _assert_useful_error(response, "Отказ при обработке значимой страницы-скана")
-            else:
-                _assert_status(response, 200, "OCR-успех допустим только при сохранении страницы-скана")
-                chunks = response.json().get("chunks", [])
-                scan_page_text = " ".join(
+        with allure.step("1.2. Проверить текст обеих страниц и факты со скана"):
+            _assert_status(response, 200, "Смешанный PDF должен быть распознан OCR без потери страниц")
+            chunks = response.json().get("chunks", [])
+            page_text = {
+                page: " ".join(
                     " ".join(chunk.get("text", "").split())
                     for chunk in chunks
-                    if chunk.get("page") == 2
+                    if chunk.get("page") == page
                 )
-                assert scan_page_text, (
-                    "При HTTP 200 OCR должен вернуть непустые чанки физической страницы 2; "
-                    f"номера страниц в ответе: {[chunk.get('page') for chunk in chunks]}"
+                for page in (1, 2)
+            }
+            assert all(page_text.values()), (
+                "HTTP 200 должен содержать текст обеих физических страниц; "
+                f"найдены страницы: {[chunk.get('page') for chunk in chunks]}"
+            )
+            assert "Readable first page" in page_text[1], (
+                f"Текстовая страница 1 должна сохраниться; получено: {page_text[1][:1200]!r}"
+            )
+            for landmark in ("12.7 percent", "9.8 billion rubles"):
+                assert landmark in page_text[2], (
+                    f"OCR должен сохранить контрольный факт {landmark!r} со страницы 2; "
+                    f"распознано: {page_text[2][:1200]!r}"
                 )
-                for landmark in ("12.7 percent", "9.8 billion rubles"):
-                    assert landmark in scan_page_text, (
-                        f"OCR-успех должен сохранить контрольный факт {landmark!r} со страницы 2; "
-                        f"распознано: {scan_page_text[:1200]!r}"
-                    )
 
 
 @allure.parent_suite("ML")
@@ -682,34 +687,81 @@ def test_integration_corrupt_pdf_returns_422(ml_http: httpx.Client) -> None:
 @allure.parent_suite("ML")
 @allure.suite("Integration")
 @allure.sub_suite("PDF")
-@allure.title("TestIntegrationMlPdfNoText — PDF без текста завершается ошибкой")
+@allure.title("TestIntegrationMlPdfNoText — пустая страница отклоняется, скан распознаётся")
 @allure.description("""Шаги:
 1. Проверить PDF без извлекаемого текстового слоя.
 1.1. Отправить документ соответствующего параметризованного случая.
-1.2. Проверить явный отказ для этого документа.
+1.2. Проверить явный отказ пустой страницы либо OCR-результат скана.
 
-Ожидание: каждый запрос явно отклоняется с HTTP 400 или 422 и полезной причиной. HTTP 422 рекомендован контрактом.""")
+Ожидание: пустая страница явно отклоняется; PDF со сканом возвращает HTTP 200 с контрольными фактами.""")
 @pytest.mark.parametrize(
     ("document_id", "pdf", "case_name"),
     [
         ("66666666-6666-4666-8666-666666666666", _make_pdf([None]), "Физически пустая страница"),
-        ("77777777-7777-4777-8777-777777777777", _make_image_only_pdf(), "Страница-изображение без OCR"),
+        ("77777777-7777-4777-8777-777777777777", _make_image_only_pdf(), "Страница-изображение с OCR"),
     ],
     ids=["blank-page", "image-only"],
 )
-def test_integration_pdf_without_extractable_text_returns_422(
+def test_integration_pdf_without_text_rejects_blank_and_ocr_scans(
     ml_http: httpx.Client, document_id: str, pdf: bytes, case_name: str
 ) -> None:
-    """Проверяет явный отказ для PDF, из которого не извлечён ни один текстовый чанк."""
+    """Проверяет пустую страницу и OCR-обработку PDF со сканом."""
     headers = {"Content-Type": "application/pdf", "Accept": "application/json"}
     with allure.step(f"1. Обработать PDF без текстового слоя: {case_name}"):
         with allure.step("1.1. Выполнить POST analyze"):
             response = ml_http.post(f"/documents/{document_id}/analyze", content=pdf, headers=headers)
             _attach_exchange(case_name, pdf, response)
-        with allure.step("1.2. Проверить отказ без фиктивного успеха"):
-            _assert_status_in(
-                response,
-                {400, 422},
-                f"{case_name}: PDF без извлекаемого текста должен быть отклонён",
+        with allure.step("1.2. Проверить отказ пустой страницы или обязательный успех OCR скана"):
+            if case_name == "Физически пустая страница":
+                _assert_status_in(response, {400, 422}, "Пустая страница должна быть отклонена явно")
+                _assert_useful_error(response, "Отказ для физически пустой страницы")
+            else:
+                _assert_status(response, 200, "Страница-изображение должна пройти настоящий OCR")
+                chunks = response.json().get("chunks", [])
+                recognized = " ".join(chunk.get("text", "") for chunk in chunks)
+                assert "12.7" in recognized and "9.8" in recognized, (
+                    "OCR должен сохранить контрольные числа со скана; "
+                    f"распознано: {recognized[:1200]!r}"
+                )
+
+
+@allure.parent_suite("ML")
+@allure.suite("Integration")
+@allure.sub_suite("PDF")
+@allure.title("TestIntegrationMlOcrCache — повторный HTTP-анализ использует OCR-кэш")
+@allure.description("""Шаги:
+1. Дважды отправить один и тот же скан через работающий HTTP API.
+1.1. Проверить результат распознавания и появление OCR-кэша.
+1.2. Повторить запрос с теми же PDF-байтами и проверить неизменность кэш-файла.
+
+Ожидание: оба запроса возвращают HTTP 200 с одинаковыми распознанными контрольными фактами, а повторный запрос сохраняет существующий кэш.""")
+def test_integration_ocr_cache_is_used_across_http_requests(
+    ml_http: httpx.Client, request: pytest.FixtureRequest
+) -> None:
+    """Проверяет OCR и его кэш через два реальных HTTP-запроса."""
+    document_id = "12121212-1212-4212-8212-121212121212"
+    pdf = _make_image_only_pdf()
+    headers = {"Content-Type": "application/pdf", "Accept": "application/json"}
+    cache_dir: Path = request.config._ml_ocr_cache_dir
+    cache_file = cache_dir / f"{hashlib.sha256(pdf).hexdigest()}.json"
+    with allure.step("1. Выполнить два HTTP-запроса с одинаковым сканированным PDF"):
+        with allure.step("1.1. Отправить PDF и проверить настоящее распознавание"):
+            first = ml_http.post(f"/documents/{document_id}/analyze", content=pdf, headers=headers)
+            _attach_exchange("Первый OCR-запрос", pdf, first)
+            _assert_status(first, 200, "Для проверки кэша OCR должен успешно обработать скан")
+            first_text = " ".join(chunk.get("text", "") for chunk in first.json().get("chunks", []))
+            assert "12.7" in first_text and "9.8" in first_text, (
+                f"Первый OCR-ответ должен содержать контрольные факты, получено: {first_text[:1200]!r}"
             )
-            _assert_useful_error(response, f"Отказ для случая «{case_name}» без извлекаемого текста")
+            assert cache_file.is_file(), f"OCR должен записать результат в {cache_file.name}"
+            initial_mtime = cache_file.stat().st_mtime_ns
+        with allure.step("1.2. Повторить запрос и подтвердить чтение того же кэша"):
+            second = ml_http.post(f"/documents/{document_id}/analyze", content=pdf, headers=headers)
+            _attach_exchange("Повторный OCR-запрос", pdf, second)
+            _assert_status(second, 200, "Повторный HTTP-анализ скана должен успешно обработаться")
+            second_text = " ".join(chunk.get("text", "") for chunk in second.json().get("chunks", []))
+            assert second_text == first_text, (
+                "Повторный OCR-ответ должен совпадать с первым; "
+                f"первый={first_text[:1000]!r}, второй={second_text[:1000]!r}"
+            )
+            assert cache_file.stat().st_mtime_ns == initial_mtime, "Повторный анализ не должен перезаписывать OCR-кэш"

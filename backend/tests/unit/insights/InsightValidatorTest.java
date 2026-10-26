@@ -27,7 +27,7 @@ class InsightValidatorTest {
     @Test
     @Step("Удаляет неподтверждённые факты и позицию банка из неподходящего материала")
     void removesUnretrievedFactsAndBankViewFromNonBankSources() {
-        // Подготовка: ссылки ведут на реальный обычный фрагмент и реальный материал банка.
+        // Подготовка: утверждения ссылаются на обычный фрагмент и реальный материал банка.
         ObjectNode input = empty();
         input.withArray("facts")
                 .addObject()
@@ -115,23 +115,25 @@ class InsightValidatorTest {
                             .contains("Удалены неподтверждённые утверждения из bank_view");
                 });
         Allure.step(
-                "4. Удалить непроверенный источник из списка источников",
+                "4. Оставить в источниках только процитированные фрагменты",
                 () -> {
+                    assertThat(result.path("sources").isArray())
+                            .as("sources должен быть JSON-массивом")
+                            .isTrue();
                     assertThat(result.path("sources").size())
                             .as(
-                                    "число исходных фрагментов: expected=3, actual=%s",
+                                    "число процитированных фрагментов: expected=2, actual=%s",
                                     result.path("sources").size())
-                            .isEqualTo(3);
+                            .isEqualTo(2);
                     assertThat(result.path("sources").findValuesAsString("fragment_id"))
                             .as(
-                                    "идентификаторы реального обычного, синтетического и банковского источников")
+                                    "идентификаторы фрагментов, процитированных подтверждёнными утверждениями")
                             .containsExactlyInAnyOrder(
-                                    fragmentId.toString(),
-                                    bankFragmentId.toString(),
-                                    documentId.toString());
+                                    fragmentId.toString(), documentId.toString());
                     assertThat(result.path("sources").toString())
-                            .as("проверенные источники")
-                            .doesNotContain("invented.example");
+                            .as(
+                                    "процитированные источники без неподтверждённых и непроцитированных фрагментов")
+                            .doesNotContain("invented.example", bankFragmentId.toString());
                 });
     }
 
