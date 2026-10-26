@@ -114,6 +114,7 @@
 "alpha.business.insight.core.insight.InsightApiIntegrationTest#administratorCanGenerateWithoutCompanyGrant": "TestIntegrationAllowAdminInsightGeneration"
 "alpha.business.insight.core.insight.InsightApiIntegrationTest#unknownCompanyOrEventReturns404": "TestIntegrationReturnUnknownInsightTarget"
 "alpha.business.insight.core.insight.InsightApiIntegrationTest#qdrantFragmentsReachPromptButSyntheticBankViewIsRemoved": "TestIntegrationValidateInsightSources"
+"alpha.business.insight.core.insight.InsightApiIntegrationTest#TestIntegrationQdrantScoreThreshold": "TestIntegrationQdrantScoreThreshold"
 "alpha.business.insight.core.insight.InsightApiIntegrationTest#failedLlmDoesNotCacheIncompleteInsight": "TestIntegrationRetryInsightAfterLlmFailure"
 "alpha.business.insight.core.insight.InsightApiIntegrationTest#failedMlDoesNotSaveInsightAndCanBeRetried": "TestIntegrationRetryInsightAfterMlFailure"
 "alpha.business.insight.core.insight.InsightApiIntegrationTest#failedQdrantDoesNotSaveInsightAndCanBeRetried": "TestIntegrationRetryInsightAfterQdrantFailure"
@@ -172,3 +173,10 @@
 "alpha.business.insight.core.company.CompanyContextIntegrationTest#directorWithoutSubjectCannotListCompanies": "TestIntegrationRejectCompanyListWithoutSubject"
 "alpha.business.insight.core.qa.company.CompanyListServiceTest#directorWithoutSubjectCannotListCompanies": "TestUnitRejectCompanyListWithoutSubject"
 "alpha.business.insight.core.insight.InsightApiIntegrationTest#savedInsightDoesNotBypassCompanyAccess": "TestIntegrationProtectSavedInsightAfterAccessRevocation"
+"alpha.business.insight.core.qa.events.NewsIngestionHttpE2eTest#TestE2ENewsCollectionPersistsAndDeduplicates": "TestE2ENewsCollectionPersistsAndDeduplicates — RSS → Python → backend → события"
+
+"alpha.business.insight.core.qa.documents.integration.RealMlDocumentIntegrationTest#TestIntegrationUploadMixedTextAndScannedPdfThroughRealPython": "TestIntegrationUploadMixedTextAndScannedPdfThroughRealPython"
+"alpha.business.insight.core.qa.documents.integration.RealMlDocumentIntegrationTest#TestIntegrationRejectPasswordProtectedPdfWithoutArtifacts": "TestIntegrationRejectPasswordProtectedPdfWithoutArtifacts"
+
+"alpha.business.insight.core.qa.events.RankingHttpE2eTest#TestE2ERateEventRanksDifferentlyForLoanAndDepositCompanies": "TestE2ERateEventRanksDifferentlyForLoanAndDepositCompanies"
+"alpha.business.insight.core.qa.events.RankingHttpE2eTest#TestE2ERateEventExplainsCounterpartyExposure": "TestE2ERateEventExplainsCounterpartyExposure"

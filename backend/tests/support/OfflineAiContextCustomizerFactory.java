@@ -34,9 +34,13 @@ public final class OfflineAiContextCustomizerFactory implements ContextCustomize
         @Override
         public void customizeContext(
                 ConfigurableApplicationContext context, MergedContextConfiguration mergedConfig) {
+            var properties = new java.util.HashMap<>(PROPERTIES);
+            if (!mergedConfig.getTestClass().getSimpleName().equals("NewsIngestionHttpE2eTest")) {
+                properties.put("news.collect.enabled", "false");
+            }
             context.getEnvironment()
                     .getPropertySources()
-                    .addFirst(new MapPropertySource("qaOfflineAiProperties", PROPERTIES));
+                    .addFirst(new MapPropertySource("qaOfflineAiProperties", properties));
         }
     }
 }

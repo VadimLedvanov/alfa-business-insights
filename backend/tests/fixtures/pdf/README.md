@@ -1,4 +1,23 @@
-# PDF для проверки размера загрузки
+# PDF fixtures
+
+## Synthetic OCR fixture
+
+`ocr-mixed-text-and-scan.pdf` is a synthetic two-page fixture created for the real
+backend/Python ML integration test. Page 1 contains an embedded Russian text layer;
+page 2 is a raster image of large English text with stable OCR landmarks. It contains
+no customer or public-source data. The fixture is 491,123 bytes with SHA-256
+`8152d58fa25e248bf08fdcc5e5c8b389fec37d11192bafe40c5b1bda548ba4ad`.
+Русская пометка о происхождении: файл полностью синтетический; первая страница
+содержит встроенный текст, вторая собрана как изображение страницы со сканированным текстом.
+
+`ocr-password-protected.pdf` is a synthetic AES-256 password-protected one-page PDF
+used to verify that the real backend and Python ML service reject protected input
+without persisting it. It is 1,801 bytes with SHA-256
+`374978b8069597d49a750cdce7592fd887c5321ba5cd7825ee191598cb919c53`.
+Русская пометка о происхождении: синтетический PDF, созданный специально для проверки
+отказа при наличии пароля; пользовательский пароль тесту не передаётся.
+
+## Upload-size fixtures
 
 Файлы 36, 50 и 51 МиБ сохраняются в этой папке. `SizedPdfFixtures.savedPdf(int)`
 восстанавливает отсутствующий файл или файл с неверным SHA-256 из исходного PDF ЦБ
