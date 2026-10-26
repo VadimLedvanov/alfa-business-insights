@@ -34,6 +34,9 @@ spring:
           document-analyzer:
             connectTimeout: 3000
             readTimeout: 60000
+          event-ranker:
+            connectTimeout: 3000
+            readTimeout: 30000
   application:
     name: core
   security:

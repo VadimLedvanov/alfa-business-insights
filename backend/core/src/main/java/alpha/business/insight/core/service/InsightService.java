@@ -40,6 +40,8 @@ import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.regex.Pattern;
+import alpha.business.insight.core.ml.EventRanker;
+import org.springframework.beans.factory.ObjectProvider;
 
 /** Генерирует инсайт и сохраняет результат для текущей версии материалов события. */
 @Service
@@ -55,6 +57,7 @@ public class InsightService {
     private final UserCompanyAccessRepository access;
     private final CompanyContextService contexts;
     private final DocumentAnalyzer analyzer;
+    private final ObjectProvider<EventRanker> ranker;
     private final DocumentVectorStore vectors;
     private final LlmClient llm;
     private final InsightValidator validator;
@@ -125,11 +128,15 @@ public class InsightService {
         }
         Set<UUID> generated = new HashSet<>(insights.findGeneratedEventIds(companyId,
                 candidates.stream().map(Event::getId).toList()));
+        List<EventCandidate> personal = rankWithModel(companyId, context, candidates, generated);
+        if (!personal.isEmpty()) {
+            return personal;
+        }
         String companyText = companyText(context);
         if (companyText.isBlank()) {
             return candidates.stream().limit(3)
                     .map(event -> new EventCandidate(event.getId(), event.getTitle(), event.getSourceType(),
-                            event.getStatus(), event.getCreatedAt(), 0, generated.contains(event.getId())))
+                            event.getStatus(), event.getCreatedAt(), 0, generated.contains(event.getId()), null, List.of()))
                     .toList();
         }
         DocumentAnalyzer.EmbeddingComparison comparison;
@@ -148,7 +155,7 @@ public class InsightService {
                     : cosine(comparison.companyEmbedding(), comparison.eventEmbeddings().get(i));
             Event event = candidates.get(i);
             ranked.add(new EventCandidate(event.getId(), event.getTitle(), event.getSourceType(), event.getStatus(),
-                    event.getCreatedAt(), score, generated.contains(event.getId())));
+                    event.getCreatedAt(), score, generated.contains(event.getId()), null, List.of()));
         }
         return ranked.stream().sorted(Comparator.comparingDouble(EventCandidate::relevanceScore).reversed()
                         .thenComparing(EventCandidate::createdAt, Comparator.reverseOrder())
@@ -166,6 +173,39 @@ public class InsightService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Сохранённый инсайт не найден"));
         return messages.findByInsightIdOrderByCreatedAtAscIdAsc(insight.getId()).stream()
                 .map(DialogMessageDto::from).toList();
+    }
+
+        /** Персональный отбор моделью ML; пустой список означает откат к сравнению embeddings. */
+    private List<EventCandidate> rankWithModel(String companyId, CompanyContext context, List<Event> candidates,
+                                               Set<UUID> generated) {
+        EventRanker client = ranker.getIfAvailable();
+        if (client == null) {
+            return List.of();
+        }
+        EventRanker.RankResponse response;
+        try {
+            response = client.rank(new EventRanker.RankRequest(context, candidates.stream()
+                    .map(event -> new EventRanker.Candidate(event.getId(), event.getTitle(), event.getSourceRef(),
+                            event.getCreatedAt()))
+                    .toList(), 3, null));
+        } catch (RuntimeException exception) {
+            log.warn("Event ranking failed, fallback to embeddings companyId={} errorType={}", companyId,
+                    exception.getClass().getSimpleName());
+            return List.of();
+        }
+        if (response == null || response.items() == null) {
+            return List.of();
+        }
+        Map<UUID, Event> byId = new HashMap<>();
+        candidates.forEach(event -> byId.put(event.getId(), event));
+        return response.items().stream().filter(item -> byId.containsKey(item.id())).limit(3)
+                .map(item -> {
+                    Event event = byId.get(item.id());
+                    return new EventCandidate(event.getId(), event.getTitle(), event.getSourceType(),
+                            event.getStatus(), event.getCreatedAt(), item.score(), generated.contains(event.getId()),
+                            item.effect(), item.why() == null ? List.of() : item.why());
+                })
+                .toList();
     }
 
     private static String companyText(CompanyContext context) {

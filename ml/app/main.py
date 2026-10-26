@@ -63,3 +63,21 @@ def compare_embeddings(body: CompareEmbeddingsRequest):
         "companyEmbedding": vectors[0],
         "eventEmbeddings": vectors[1:],
     }
+
+from app.ranking import rank as rank_events
+
+
+class RankRequest(BaseModel):
+    company: dict
+    candidates: list[dict]
+    topK: int = 3
+    role: str | None = None
+
+
+@app.post("/rank")
+def rank(body: RankRequest):
+    if not 1 <= body.topK <= 50:
+        raise HTTPException(status_code=400, detail="topK должен быть от 1 до 50")
+    if len(body.candidates) > 500:
+        raise HTTPException(status_code=400, detail="Можно ранжировать не более 500 событий")
+    return rank_events(body.company, body.candidates, body.topK, body.role)
