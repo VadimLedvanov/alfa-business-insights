@@ -129,3 +129,12 @@ a.source-card:hover { border-color: var(--color-light-border-primary); }
   .insight-layout { grid-template-columns: 1fr; }
   .split { grid-template-columns: 1fr; }
 }
+
+.insight-generate__spinner--dark { border-color: var(--color-light-neutral-translucent-300); border-top-color: var(--color-light-text-primary); flex: none; }
+.insight-generate__error { margin: 0 0 12px; color: var(--radar-impact-high-text); font-size: 14px; }
+.gen-steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.gen-steps__item { display: flex; align-items: center; gap: 10px; min-height: 20px; font-size: 14px; color: var(--color-light-text-tertiary); }
+.gen-steps__item--active { color: var(--color-light-text-primary); font-weight: 600; }
+.gen-steps__item--done { color: var(--color-light-text-secondary); }
+.gen-steps__item--done::before { content: '✓'; width: 15px; text-align: center; color: var(--radar-opportunity-text); }
+.gen-steps__item:not(.gen-steps__item--active):not(.gen-steps__item--done)::before { content: ''; width: 15px; height: 15px; flex: none; border: 2px solid var(--color-light-border-secondary); border-radius: 50%; box-sizing: border-box; }

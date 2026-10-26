@@ -14,6 +14,8 @@ import type { CompanyContext, EventRead, Insight, InsightMessage, Significance, 
 import { money, revenueLabel, sharePct } from '../lib/format';
 import './InsightPage.css';
 
+const GENERATION_STEPS = ['Читаем событие', 'Сопоставляем с профилем компании', 'Ищем позицию банка в аналитике', 'Формируем вывод'];
+
 export function InsightPage({ eventId }: { eventId: string }) {
   const { companyId } = useCompany();
   const context = useCompanyContext(companyId);
@@ -25,12 +27,14 @@ export function InsightPage({ eventId }: { eventId: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
   const [revision, setRevision] = useState(0);
   const [preview, setPreview] = useState<{ name: string; url: string; blob: Blob; page: number } | null>(null);
 
   useEffect(() => {
     let active = true;
-    setLoading(true); setError(null); setInsight(null); setMessages([]); setMessagesError(null);
+    setLoading(true); setError(null); setGenError(null); setInsight(null); setMessages([]); setMessagesError(null);
     api.event(eventId).then(async (value) => {
       if (!active) return;
       setEvent(value);
@@ -57,16 +61,23 @@ export function InsightPage({ eventId }: { eventId: string }) {
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url); }, [preview]);
 
+  useEffect(() => {
+    if (!busy) return;
+    setStep(0);
+    const timer = window.setInterval(() => setStep((n) => Math.min(n + 1, GENERATION_STEPS.length - 1)), 4000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
+
   const generate = async () => {
     if (!companyId || event?.sourceType !== 'TEXT') return;
-    setBusy(true); setError(null);
+    setBusy(true); setGenError(null);
     try {
       const value = await api.generateInsight(companyId, eventId);
       setInsight(value);
       setEvent((current) => current ? { ...current, status: 'READY' } : current);
       try { setMessages(await api.messages(companyId, eventId)); setMessagesError(null); }
       catch (e) { setMessagesError(e instanceof Error ? e.message : 'История сообщений недоступна.'); }
-    } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось сформировать разбор.'); }
+    } catch (e) { setGenError(e instanceof Error ? e.message : 'Не удалось сформировать разбор.'); }
     finally { setBusy(false); }
   };
 
@@ -108,7 +119,9 @@ export function InsightPage({ eventId }: { eventId: string }) {
               <div className="eyebrow">РАЗБОР ДЛЯ КОМПАНИИ</div>
               <h2>{event.status === 'FAILED' ? 'Разбор не сформирован' : 'Инсайд по этому событию ещё не создан'}</h2>
               <p>{event.sourceType === 'TEXT' ? `Сопоставим событие с профилем компании ${companyId}, сохраним вывод и оценку значимости.` : 'Для URL и PDF извлечение текста пока не подключено, поэтому сформировать инсайд нельзя.'}</p>
-              {event.sourceType === 'TEXT' && <button className="button button--primary insight-generate" disabled={busy} aria-busy={busy} onClick={() => void generate()}>{busy && <span className="insight-generate__spinner" aria-hidden="true" />}{busy ? 'Формируем инсайд…' : 'Сформировать инсайд'}</button>}
+              {genError && !busy && <p className="insight-generate__error" role="alert">Не удалось сформировать инсайд: {genError}</p>}
+              {event.sourceType === 'TEXT' && !busy && <button className="button button--primary insight-generate" onClick={() => void generate()}>{genError ? 'Повторить' : 'Сформировать инсайд'}</button>}
+              {busy && <ol className="gen-steps" aria-live="polite" aria-busy="true">{GENERATION_STEPS.map((label, i) => <li key={label} className={`gen-steps__item${i < step ? ' gen-steps__item--done' : i === step ? ' gen-steps__item--active' : ''}`}>{i === step && <span className="insight-generate__spinner insight-generate__spinner--dark" aria-hidden="true" />}{label}</li>)}</ol>}
             </section>
           </div>
           <aside className="insight-aside"><CompanyProfileCard ctx={context.data} onOpenProfile={() => navigate('/companies')} /></aside>
