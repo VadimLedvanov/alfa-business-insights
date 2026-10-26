@@ -15,6 +15,8 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Collection;
+import java.util.Set;
 
 /**
  * JPA-хранилище событий и их исходных материалов.
@@ -35,6 +37,10 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
                                  @Param("status") EventStatus status,
                                  @Param("sourceType") EventSourceType sourceType,
                                  Pageable pageable);
+
+    /** Возвращает уже сохранённые внешние идентификаторы из переданного списка. */
+    @Query("select e.externalId from Event e where e.externalId in :ids")
+    Set<String> findExistingExternalIds(@Param("ids") Collection<String> ids);
 
     /** Сериализует генерации события, чтобы параллельные POST не дублировали платные вызовы. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -16,6 +16,7 @@ import alpha.business.insight.core.qa.connectors.MockMvcRestAssured;
 import alpha.business.insight.core.qa.helpers.TestEvidence;
 import alpha.business.insight.core.repository.CompanyPaymentSummaryRepository;
 import alpha.business.insight.core.repository.CompanyRepository;
+import alpha.business.insight.core.repository.UserCompanyAccessRepository;
 import alpha.business.insight.core.service.CompanyContextService;
 import jakarta.persistence.EntityManager;
 import java.util.List;
@@ -63,6 +64,7 @@ class CompanyContextIntegrationTest {
 
     @Autowired MockMvc mvc;
     @Autowired EntityManager entities;
+    @Autowired UserCompanyAccessRepository access;
     @Autowired CompanyRepository companies;
     @Autowired CompanyPaymentSummaryRepository payments;
     @MockitoBean JwtDecoder decoder;
@@ -178,7 +180,7 @@ class CompanyContextIntegrationTest {
     void
             givenSmallConfiguredLimit_whenGetContext_thenCalculateConcentrationAcrossThreeCounterparties() {
         // Подготовка
-        CompanyContextService service = new CompanyContextService(companies, payments, 2);
+        CompanyContextService service = new CompanyContextService(companies, payments, access, 2);
 
         TestEvidence.step(
                 "Calculate context with a limited counterparty list",
@@ -206,7 +208,7 @@ class CompanyContextIntegrationTest {
         TestEvidence.stepThrows(
                 "Reject a non-positive counterparty limit",
                 List.of(new TestEvidence.Input("resultLimit", 0)),
-                () -> new CompanyContextService(companies, payments, 0),
+                () -> new CompanyContextService(companies, payments, access, 0),
                 failure -> assertThat(failure).isInstanceOf(IllegalArgumentException.class));
     }
 
@@ -219,7 +221,7 @@ class CompanyContextIntegrationTest {
                 UPDATE company_payment_summaries SET total_payment_amount = 0
                 WHERE payer_company_id = 'ctx_main' OR recipient_company_id = 'ctx_main'
                 """);
-        CompanyContextService service = new CompanyContextService(companies, payments, 5);
+        CompanyContextService service = new CompanyContextService(companies, payments, access, 5);
 
         TestEvidence.step(
                 "Calculate shares for zero-value payments",
@@ -258,7 +260,7 @@ class CompanyContextIntegrationTest {
                 "UPDATE companies SET group_id = 'ctx_group', main_industry_code = ' ' "
                         + "WHERE company_id = 'ctx_conflict'");
         execute("UPDATE companies SET foreign_trade_countries = ' ' WHERE company_id = 'ctx_main'");
-        CompanyContextService service = new CompanyContextService(companies, payments, 5);
+        CompanyContextService service = new CompanyContextService(companies, payments, access, 5);
 
         TestEvidence.step(
                 "Report missing data for a conflicting company profile",
@@ -285,7 +287,7 @@ class CompanyContextIntegrationTest {
     void
             givenOneCounterparty_whenGetContext_thenConcentrationIsOneAndIncomingDirectionIsPreserved() {
         // Подготовка
-        CompanyContextService service = new CompanyContextService(companies, payments, 5);
+        CompanyContextService service = new CompanyContextService(companies, payments, access, 5);
 
         TestEvidence.step(
                 "Calculate direction and concentration for one counterparty",
@@ -311,6 +313,127 @@ class CompanyContextIntegrationTest {
                     assertThat(context.concentration().top1Share()).isEqualByComparingTo("1");
                     assertThat(context.concentration().top3Share()).isEqualByComparingTo("1");
                 });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ctx_b", "ctx_group_member"})
+    void directorCannotReadCompanyWithoutGrant(String companyId) throws Exception {
+        request()
+                .postProcessors(director("ROLE_COMPANY_DIRECTOR"))
+                .when()
+                .get("/api/companies/" + companyId)
+                .then()
+                .statusCode(403);
+    }
+
+    /** Разрешение другого пользователя не открывает компанию текущему директору. */
+    @Test
+    void companyAccessIsScopedToJwtSubject() throws Exception {
+        execute(
+                "INSERT INTO user_company_access (user_id, company_id) VALUES ('other-director', 'ctx_b')");
+        var otherDirector =
+                jwt().jwt(token -> token.subject("other-director"))
+                        .authorities(new SimpleGrantedAuthority("ROLE_COMPANY_DIRECTOR"));
+
+        request()
+                .postProcessors(otherDirector)
+                .queryParam("companyId", "ctx_")
+                .when()
+                .get("/api/companies")
+                .then()
+                .statusCode(200)
+                .body("totalElements", equalTo(1))
+                .body("content.companyId", contains("ctx_b"));
+        request()
+                .postProcessors(otherDirector)
+                .when()
+                .get("/api/companies/ctx_b")
+                .then()
+                .statusCode(200)
+                .body("profile.companyId", equalTo("ctx_b"));
+        request()
+                .postProcessors(otherDirector)
+                .when()
+                .get("/api/companies/ctx_main")
+                .then()
+                .statusCode(403);
+        request()
+                .postProcessors(director("ROLE_COMPANY_DIRECTOR"))
+                .when()
+                .get("/api/companies/ctx_b")
+                .then()
+                .statusCode(403);
+
+        execute("DELETE FROM user_company_access WHERE user_id = 'other-director'");
+        request()
+                .postProcessors(otherDirector)
+                .when()
+                .get("/api/companies")
+                .then()
+                .statusCode(200)
+                .body("totalElements", equalTo(0))
+                .body("content", empty());
+        request()
+                .postProcessors(otherDirector)
+                .when()
+                .get("/api/companies/ctx_b")
+                .then()
+                .statusCode(403);
+    }
+
+    /** JWT без идентификатора пользователя не должен открывать общий список компаний. */
+    @Test
+    void directorWithoutSubjectCannotListCompanies() throws Exception {
+        request()
+                .postProcessors(
+                        jwt().jwt(token -> token.claims(claims -> claims.remove("sub")))
+                                .authorities(new SimpleGrantedAuthority("ROLE_COMPANY_DIRECTOR")))
+                .when()
+                .get("/api/companies")
+                .then()
+                .statusCode(403);
+    }
+
+    @Test
+    void companyListContainsOnlyGrantedCompaniesWithScopedPagination() throws Exception {
+        request()
+                .postProcessors(director("ROLE_COMPANY_DIRECTOR"))
+                .queryParam("companyId", "ctx_")
+                .queryParam("size", "2")
+                .when()
+                .get("/api/companies")
+                .then()
+                .statusCode(200)
+                .body("totalElements", equalTo(3))
+                .body("totalPages", equalTo(2))
+                .body("content.companyId", contains("ctx_conflict", "ctx_empty"));
+        request()
+                .postProcessors(director("ROLE_COMPANY_DIRECTOR"))
+                .queryParam("companyId", "ctx_b")
+                .when()
+                .get("/api/companies")
+                .then()
+                .statusCode(200)
+                .body("totalElements", equalTo(0))
+                .body("content", empty());
+        request()
+                .postProcessors(
+                        jwt().jwt(token -> token.subject("unassigned"))
+                                .authorities(new SimpleGrantedAuthority("ROLE_COMPANY_DIRECTOR")))
+                .when()
+                .get("/api/companies")
+                .then()
+                .statusCode(200)
+                .body("totalElements", equalTo(0))
+                .body("content", empty());
+        request()
+                .postProcessors(director("ROLE_SYSTEM_ADMIN"))
+                .queryParam("companyId", "ctx_b")
+                .when()
+                .get("/api/companies")
+                .then()
+                .statusCode(200)
+                .body("content.companyId", contains("ctx_b"));
     }
 
     /** Проверяет ответ 404 для неизвестной компании. */

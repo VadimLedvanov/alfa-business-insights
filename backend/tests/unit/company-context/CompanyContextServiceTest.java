@@ -13,6 +13,7 @@ import alpha.business.insight.core.model.CompanyProfileStatus;
 import alpha.business.insight.core.qa.helpers.TestEvidence;
 import alpha.business.insight.core.repository.CompanyPaymentSummaryRepository;
 import alpha.business.insight.core.repository.CompanyRepository;
+import alpha.business.insight.core.repository.UserCompanyAccessRepository;
 import alpha.business.insight.core.service.CompanyContextService;
 import io.qameta.allure.Allure;
 import io.qameta.allure.Epic;
@@ -38,6 +39,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Feature("Контекст компании")
 @Tag("company-context")
 class CompanyContextServiceTest {
+    @Mock private UserCompanyAccessRepository access;
     @Mock private CompanyRepository companies;
     @Mock private CompanyPaymentSummaryRepository payments;
 
@@ -83,7 +85,8 @@ class CompanyContextServiceTest {
                     var result =
                             TestEvidence.capture(
                                     () ->
-                                            new CompanyContextService(companies, payments, limit)
+                                            new CompanyContextService(
+                                                            companies, payments, access, limit)
                                                     .getContext(companyId));
                     TestEvidence.output("Контекст компании", result);
 
@@ -145,7 +148,8 @@ class CompanyContextServiceTest {
                     var result =
                             TestEvidence.capture(
                                     () ->
-                                            new CompanyContextService(companies, payments, limit)
+                                            new CompanyContextService(
+                                                            companies, payments, access, limit)
                                                     .getContext(companyId));
                     TestEvidence.output("Контекст компании", result);
 
@@ -186,7 +190,8 @@ class CompanyContextServiceTest {
                     Throwable actual =
                             catchThrowable(
                                     () ->
-                                            new CompanyContextService(companies, payments, 1)
+                                            new CompanyContextService(
+                                                            companies, payments, access, 1)
                                                     .getContext(companyId));
                     if (actual == null)
                         TestEvidence.output("Фактическое исключение", Map.of("exception", "none"));
@@ -215,7 +220,9 @@ class CompanyContextServiceTest {
                     // Создаёт сервис с нулевым лимитом.
                     Throwable actual =
                             catchThrowable(
-                                    () -> new CompanyContextService(companies, payments, limit));
+                                    () ->
+                                            new CompanyContextService(
+                                                    companies, payments, access, limit));
                     if (actual == null)
                         TestEvidence.output("Фактическое исключение", Map.of("exception", "none"));
                     else TestEvidence.exception(actual);

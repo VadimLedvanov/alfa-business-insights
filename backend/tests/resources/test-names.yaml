@@ -164,3 +164,11 @@
 "alpha.business.insight.core.qa.company.CompanyUsersHttpE2eTest#TestE2EProcessingEventIsExcludedFromCompanyTop": "TestE2EProcessingEventIsExcludedFromCompanyTop"
 "alpha.business.insight.core.qa.events.EventCatalogHttpE2eTest#TestE2ECatalogEventsCreateReadAndList": "TestE2ECatalogEventsCreateReadAndList"
 "alpha.business.insight.core.qa.events.EventCatalogHttpE2eTest#TestE2ECompanyDirectorsCannotCreateCatalogEvents": "TestE2ECompanyDirectorsCannotCreateCatalogEvents"
+
+"alpha.business.insight.core.company.CompanyContextIntegrationTest#directorCannotReadCompanyWithoutGrant": "TestIntegrationRejectForeignCompanyProfile"
+
+"alpha.business.insight.core.company.CompanyContextIntegrationTest#companyListContainsOnlyGrantedCompaniesWithScopedPagination": "TestIntegrationScopeCompanyListToUser"
+"alpha.business.insight.core.company.CompanyContextIntegrationTest#companyAccessIsScopedToJwtSubject": "TestIntegrationIsolateCompanyAccessBySubject"
+"alpha.business.insight.core.company.CompanyContextIntegrationTest#directorWithoutSubjectCannotListCompanies": "TestIntegrationRejectCompanyListWithoutSubject"
+"alpha.business.insight.core.qa.company.CompanyListServiceTest#directorWithoutSubjectCannotListCompanies": "TestUnitRejectCompanyListWithoutSubject"
+"alpha.business.insight.core.insight.InsightApiIntegrationTest#savedInsightDoesNotBypassCompanyAccess": "TestIntegrationProtectSavedInsightAfterAccessRevocation"

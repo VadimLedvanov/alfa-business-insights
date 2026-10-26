@@ -37,6 +37,9 @@ spring:
           event-ranker:
             connectTimeout: 3000
             readTimeout: 30000
+          news-collector:
+            connectTimeout: 3000
+            readTimeout: 600000
   application:
     name: core
   security:
@@ -81,3 +84,10 @@ ml:
   stub: ${ML_STUB}
   embedder: ${ML_EMBEDDER}
   url: ${ML_URL}
+
+news:
+  collect:
+    enabled: ${NEWS_COLLECT_ENABLED:false}
+    interval: ${NEWS_COLLECT_INTERVAL:PT15M}
+    initial-delay: ${NEWS_COLLECT_INITIAL_DELAY:PT1M}
+    hours: ${NEWS_COLLECT_HOURS:24}

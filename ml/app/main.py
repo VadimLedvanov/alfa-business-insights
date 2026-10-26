@@ -81,3 +81,22 @@ def rank(body: RankRequest):
     if len(body.candidates) > 500:
         raise HTTPException(status_code=400, detail="Можно ранжировать не более 500 событий")
     return rank_events(body.company, body.candidates, body.topK, body.role)
+import threading
+
+from app.news import collect, recent_materials
+
+collect_lock = threading.Lock()
+
+
+@app.post("/news/collect")
+def collect_news(hours: int = 24):
+    if not 1 <= hours <= 168:
+        raise HTTPException(status_code=400, detail="hours должен быть от 1 до 168")
+    if collect_lock.acquire(blocking=False):
+        try:
+            stats = collect()
+        finally:
+            collect_lock.release()
+    else:
+        stats = {"skipped": "сбор уже выполняется"}
+    return {"stats": stats, "materials": recent_materials(hours)}
