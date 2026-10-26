@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import type { CompanyListItem, Page } from '../api/types';
 import { Button } from '@alfalab/core-components/button';
 import { AppShell } from '../components/AppShell';
-import { LoadErr, initials } from '../components/common';
+import { LoadErr, MissingDataNote, initials } from '../components/common';
 import { useCompanyContext } from '../lib/useData';
 import { useCompany } from '../app/company';
 import { useRouter } from '../app/router';
@@ -85,6 +85,7 @@ function CompanyCard({ id }: { id: string }) {
       {products.length > 0 && (
         <div className="chips">{products.map((t) => <span key={t} className="tag">{t}</span>)}</div>
       )}
+      <MissingDataNote items={ctx.missingData} />
       <div className="company-card__action">
         <Button view={selected ? 'primary' : 'accent'} size={48} block onClick={open}>
           Открыть Радар

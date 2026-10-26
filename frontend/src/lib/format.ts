@@ -83,3 +83,35 @@ export function impactOf(ctx: CompanyContext, insight: Insight | null): ImpactLe
   if ((p.hasLoan || p.hasLeasing) && insight && insight.ai_inference.some((a) => a.confidence !== 'low')) return 'high';
   return 'medium';
 }
+
+const MISSING_LABELS: Record<string, string> = {
+  'profile.missing': 'профиль компании',
+  'profile.conflicting': 'профиль компании (данные противоречивы)',
+  'profile.mainIndustryCode': 'код отрасли',
+  'profile.mainIndustryName': 'отрасль',
+  'profile.region': 'регион',
+  'profile.revenue': 'выручка',
+  'profile.hasForeignTrade': 'внешняя торговля',
+  'profile.foreignTradeCountries': 'страны внешней торговли',
+  'profile.hasSettlementAccount': 'расчётный счёт',
+  'profile.hasBankGuarantee': 'банковские гарантии',
+  'profile.hasLoan': 'кредит',
+  'profile.hasLeasing': 'лизинг',
+  'profile.hasDeposit': 'депозит',
+  'profile.hasPayrollProject': 'зарплатный проект',
+  'profile.hasFactoring': 'факторинг',
+  payments: 'платежи',
+  paymentShares: 'доли платежей',
+};
+
+/** Ключи `missingData` из профиля → читаемые подписи без повторов. */
+export function missingDataLabels(keys: string[]): string[] {
+  const out = new Set<string>();
+  for (const key of keys) {
+    if (MISSING_LABELS[key]) out.add(MISSING_LABELS[key]);
+    else if (key.startsWith('group.')) out.add('отрасль компаний группы');
+    else if (key.startsWith('counterparties.')) out.add('отрасль контрагентов');
+    else out.add(key);
+  }
+  return [...out];
+}
