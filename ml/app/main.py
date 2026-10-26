@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from app.pdf import analyze_pdf
+from uuid import UUID
 
 app = FastAPI()
-
+MAX_PDF_BYTES = 50 * 1024 * 1024
 
 @app.get("/health")
 def health():
@@ -12,7 +13,18 @@ def health():
 
 @app.post("/documents/{document_id}/analyze")
 async def analyze(document_id: str, request: Request):
+    try:
+        UUID(document_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="documentId должен быть UUID")
+    if int(request.headers.get("content-length") or 0) > MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail="PDF больше 50 МиБ")
+    
     data = await request.body()
+
+    if len(data) > MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail="PDF больше 50 МиБ")
+
     if not data:
         raise HTTPException(status_code=400, detail="Пустое тело запроса")
     try:
