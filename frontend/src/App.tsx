@@ -5,6 +5,7 @@ import { useRouter } from './app/router';
 import { LoginPage } from './pages/LoginPage';
 import { CompanySelectPage } from './pages/CompanySelectPage';
 import { FeedPage } from './pages/FeedPage';
+import { HomePage } from './pages/HomePage';
 import { InsightPage } from './pages/InsightPage';
 import { SourcesPage } from './pages/SourcesPage';
 
@@ -39,7 +40,7 @@ export function App() {
     case 'companies':
       return <CompanySelectPage />;
     case 'home':
-      return companyId ? <FeedPage /> : <CompanySelectPage />;
+      return companyId ? <HomePage /> : <CompanySelectPage />;
     case 'feed':
       return companyId ? <FeedPage /> : <CompanySelectPage />;
     case 'insight':

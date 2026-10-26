@@ -57,7 +57,7 @@ function CompanyCard({ id }: { id: string }) {
 
   const open = () => {
     setCompany(id);
-    navigate('/feed');
+    navigate('/home');
   };
 
   if (error) return <LoadErr loading={false} error={error} onRetry={reload}>{null}</LoadErr>;
