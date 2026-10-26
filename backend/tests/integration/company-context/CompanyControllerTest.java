@@ -57,7 +57,8 @@ class CompanyControllerTest {
     void TestIntegrationCompanyListUsesDefaultPageAndSort() throws Exception {
         // Подготовка
         var pageable = PageRequest.of(0, 20, Sort.by("id"));
-        when(service.getCompanies(null, null, null, pageable)).thenReturn(Page.empty(pageable));
+        when(service.getCompanies(null, null, null, pageable, null))
+                .thenReturn(Page.empty(pageable));
 
         // Действие и проверки
         request()
@@ -86,7 +87,7 @@ class CompanyControllerTest {
                         "ИТ",
                         "Москва",
                         "Москва");
-        when(service.getCompanies("company", "Москва", "62", pageable))
+        when(service.getCompanies("company", "Москва", "62", pageable, null))
                 .thenReturn(new PageImpl<>(List.of(company), pageable, 3));
 
         // Действие и проверки

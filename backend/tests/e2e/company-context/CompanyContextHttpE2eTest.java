@@ -23,7 +23,6 @@ class CompanyContextHttpE2eTest extends RealStackE2eTest {
 
     /** Проверяет, что директор без разрешения не читает чужую компанию. */
     @Test
-    @Tag("known-defect")
     @Story("Ограничить доступ к компании связью пользователя")
     @DisplayName("TestE2ECompanyAccessRequiresGrant")
     void TestE2ECompanyAccessRequiresGrant() throws Exception {

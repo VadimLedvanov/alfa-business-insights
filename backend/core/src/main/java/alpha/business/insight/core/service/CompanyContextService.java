@@ -8,12 +8,14 @@ import alpha.business.insight.core.dto.CounterpartyPaymentTotals;
 import alpha.business.insight.core.dto.GroupCompany;
 import alpha.business.insight.core.dto.Counterparty;
 import alpha.business.insight.core.model.CompanyProfileStatus;
-import alpha.business.insight.core.repository.CompanyRepository;
 import alpha.business.insight.core.repository.CompanyPaymentSummaryRepository;
+import alpha.business.insight.core.repository.CompanyRepository;
+import alpha.business.insight.core.repository.UserCompanyAccessRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,12 +31,15 @@ public class CompanyContextService {
     private final CompanyRepository companies;
     private final CompanyPaymentSummaryRepository payments;
     private final int topCounterparties;
+    private final UserCompanyAccessRepository access;
 
     public CompanyContextService(CompanyRepository companies, CompanyPaymentSummaryRepository payments,
+                                 UserCompanyAccessRepository access,
                                  @Value("${company-context.top-counterparties:5}") int topCounterparties) {
         if (topCounterparties < 1) {
             throw new IllegalArgumentException("Значение company-context.top-counterparties должно быть положительным");
         }
+        this.access = access;
         this.companies = companies;
         this.payments = payments;
         this.topCounterparties = topCounterparties;
@@ -42,12 +47,38 @@ public class CompanyContextService {
 
     @Transactional(readOnly = true)
     public Page<CompanyListItem> getCompanies(String companyId, String city, String mainIndustryCode,
-                                               Pageable pageable) {
+                                               Pageable pageable, Authentication user) {
+        boolean admin = isAdmin(user);
+        if (!admin && (user.getName() == null || user.getName().isBlank())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Нет доступа к компании");
+        }
         String id = normalizeFilter(companyId);
         if (id != null) {
             id = id.replace("!", "!!").replace("%", "!%").replace("_", "!_");
         }
-        return companies.findCompanies(id, normalizeFilter(city), normalizeFilter(mainIndustryCode), pageable);
+        return companies.findCompanies(id, normalizeFilter(city), normalizeFilter(mainIndustryCode),
+                admin ? null : user.getName(), pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public void authorize(String companyId, Authentication user) {
+        if (!companies.existsById(companyId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Компания не найдена");
+        }
+        if (!isAdmin(user) && !access.hasAccess(user.getName(), companyId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Нет доступа к компании");
+        }
+    }
+
+    private static boolean isAdmin(Authentication user) {
+        return user.getAuthorities().stream()
+                .anyMatch(role -> "ROLE_SYSTEM_ADMIN".equals(role.getAuthority()));
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public CompanyContext getContext(String companyId, Authentication user) {
+        authorize(companyId, user);
+        return getContext(companyId);
     }
 
     private static String normalizeFilter(String value) {

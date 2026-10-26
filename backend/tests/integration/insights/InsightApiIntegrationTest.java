@@ -315,6 +315,46 @@ class InsightApiIntegrationTest {
         // Проверки: директор без гранта не может создавать или читать инсайт.
         request().postProcessors(director()).when().post(path()).then().statusCode(403);
         request().postProcessors(director()).when().get(path()).then().statusCode(403);
+        request()
+                .postProcessors(director())
+                .when()
+                .get("/api/companies/" + company + "/events/top")
+                .then()
+                .statusCode(403);
+        request()
+                .postProcessors(director())
+                .when()
+                .get("/api/companies/" + company + "/events/" + event + "/messages")
+                .then()
+                .statusCode(403);
+    }
+
+    /** Сохранённый разбор и его история остаются недоступны другому директору. */
+    @Test
+    void savedInsightDoesNotBypassCompanyAccess() throws Exception {
+        request().postProcessors(director()).when().post(path()).then().statusCode(200);
+        var otherDirector =
+                jwt().jwt(token -> token.subject("other-director"))
+                        .authorities(new SimpleGrantedAuthority("ROLE_COMPANY_DIRECTOR"));
+
+        request().postProcessors(otherDirector).when().get(path()).then().statusCode(403);
+        request().postProcessors(otherDirector).when().post(path()).then().statusCode(403);
+        request()
+                .postProcessors(otherDirector)
+                .when()
+                .get("/api/companies/" + company + "/events/" + event + "/messages")
+                .then()
+                .statusCode(403);
+
+        jdbc.update("DELETE FROM user_company_access WHERE company_id=?", company);
+        request().postProcessors(director()).when().get(path()).then().statusCode(403);
+        request().postProcessors(director()).when().post(path()).then().statusCode(403);
+        request()
+                .postProcessors(director())
+                .when()
+                .get("/api/companies/" + company + "/events/" + event + "/messages")
+                .then()
+                .statusCode(403);
     }
 
     /** Разрешает администратору генерацию без гранта компании. */

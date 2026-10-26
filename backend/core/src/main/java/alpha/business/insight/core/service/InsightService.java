@@ -19,7 +19,6 @@ import alpha.business.insight.core.repository.DocumentRepository;
 import alpha.business.insight.core.repository.EventRepository;
 import alpha.business.insight.core.repository.DialogMessageRepository;
 import alpha.business.insight.core.repository.InsightRepository;
-import alpha.business.insight.core.repository.UserCompanyAccessRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
@@ -52,7 +51,6 @@ public class InsightService {
     private final CompanyRepository companies;
     private final EventRepository events;
     private final DocumentRepository documents;
-    private final UserCompanyAccessRepository access;
     private final CompanyContextService contexts;
     private final DocumentAnalyzer analyzer;
     private final DocumentVectorStore vectors;
@@ -64,7 +62,7 @@ public class InsightService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> get(String companyId, UUID eventId, Authentication user) {
-        authorize(companyId, user);
+        contexts.authorize(companyId, user);
         Event event = events.findById(eventId).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Событие не найдено"));
         return response(insights.findByCompanyIdAndEventIdAndMaterialsVersion(companyId, eventId, event.getMaterialsVersion())
@@ -74,7 +72,7 @@ public class InsightService {
     /** Блокировка события и повторная проверка кэша исключают повторные LLM-вызовы параллельных POST. */
     @Transactional
     public Map<String, Object> generate(String companyId, UUID eventId, Authentication user) {
-        authorize(companyId, user);
+        contexts.authorize(companyId, user);
         Event event = events.findForInsight(eventId).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Событие не найдено"));
         Optional<Insight> cached = insights.findByCompanyIdAndEventIdAndMaterialsVersion(companyId, eventId,
@@ -116,7 +114,7 @@ public class InsightService {
 
     @Transactional(readOnly = true)
     public List<EventCandidate> topCandidates(String companyId, Authentication user) {
-        authorize(companyId, user);
+        contexts.authorize(companyId, user);
         CompanyContext context = contexts.getContext(companyId);
         List<Event> candidates = events.findByStatusAndSourceType(EventStatus.READY, EventSourceType.TEXT,
                 PageRequest.of(0, 100, Sort.by(Sort.Direction.DESC, "createdAt", "id"))).getContent();
@@ -158,7 +156,7 @@ public class InsightService {
 
     @Transactional(readOnly = true)
     public List<DialogMessageDto> messages(String companyId, UUID eventId, Authentication user) {
-        authorize(companyId, user);
+        contexts.authorize(companyId, user);
         Event event = events.findById(eventId).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Событие не найдено"));
         Insight insight = insights.findByCompanyIdAndEventIdAndMaterialsVersion(companyId, eventId,
@@ -299,18 +297,6 @@ public class InsightService {
         insight.setCostRub(BigDecimal.ZERO);
         insight.setCreatedAt(Instant.now());
         return insights.save(insight);
-    }
-
-    private void authorize(String companyId, Authentication user) {
-        if (!companies.existsById(companyId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Компания не найдена");
-        }
-        boolean authorized = user.getAuthorities().stream().anyMatch(role ->
-                Objects.equals(role.getAuthority(), "ROLE_SYSTEM_ADMIN")
-                        || Objects.equals(role.getAuthority(), "ROLE_COMPANY_DIRECTOR"));
-        if (!authorized && !access.hasAccess(user.getName(), companyId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Нет доступа к компании");
-        }
     }
 
     private Map<String, Object> asMap(ObjectNode node) {
