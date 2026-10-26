@@ -223,6 +223,29 @@ def collect() -> dict:
     print("Итог:", stats)
     return stats
 
+def recent_materials(hours: int = 24) -> list[dict]:
+    if not DATA_FILE.exists():
+        return []
+    border = datetime.now(timezone.utc) - timedelta(hours=hours)
+    materials = []
+    with DATA_FILE.open(encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if datetime.fromisoformat(record["collected_at"]) < border:
+                continue
+            materials.append({
+                "externalId": record["id"],
+                "source": record["source"],
+                "sourceTier": record["source_tier"],
+                "url": record["url"],
+                "title": record["title"],
+                "text": record["text"],
+                "publishedAt": datetime.fromisoformat(record["published_at"] or record["collected_at"])
+                .astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+    return materials
 
 if __name__ == "__main__":
     collect()

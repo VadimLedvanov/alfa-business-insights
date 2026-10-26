@@ -76,4 +76,28 @@ public class Event {
     @Column(name = "materials_version", nullable = false)
     @Builder.Default
     private Long materialsVersion = 1L;
+
+        /**
+     * Внешний идентификатор материала (хеш URL новости) для защиты от повторной загрузки.
+     */
+    @Column(name = "external_id", columnDefinition = "text")
+    private String externalId;
+
+    /**
+     * Ссылка на первоисточник.
+     */
+    @Column(name = "source_url", columnDefinition = "text")
+    private String sourceUrl;
+
+    /**
+     * Источник материала, например cbr или interfax.
+     */
+    @Column(name = "source_name", columnDefinition = "text")
+    private String sourceName;
+
+    /**
+     * Время публикации материала в источнике.
+     */
+    @Column(name = "published_at")
+    private Instant publishedAt;
 }

@@ -63,3 +63,23 @@ def compare_embeddings(body: CompareEmbeddingsRequest):
         "companyEmbedding": vectors[0],
         "eventEmbeddings": vectors[1:],
     }
+
+import threading
+
+from app.news import collect, recent_materials
+
+collect_lock = threading.Lock()
+
+
+@app.post("/news/collect")
+def collect_news(hours: int = 24):
+    if not 1 <= hours <= 168:
+        raise HTTPException(status_code=400, detail="hours должен быть от 1 до 168")
+    if collect_lock.acquire(blocking=False):
+        try:
+            stats = collect()
+        finally:
+            collect_lock.release()
+    else:
+        stats = {"skipped": "сбор уже выполняется"}
+    return {"stats": stats, "materials": recent_materials(hours)}
