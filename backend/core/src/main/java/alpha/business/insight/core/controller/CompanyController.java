@@ -1,0 +1,96 @@
+package alpha.business.insight.core.controller;
+
+import alpha.business.insight.core.dto.CompanyContext;
+import alpha.business.insight.core.dto.CompanyListItem;
+import alpha.business.insight.core.dto.DialogMessageDto;
+import alpha.business.insight.core.dto.EventCandidate;
+import alpha.business.insight.core.service.CompanyContextService;
+import alpha.business.insight.core.service.InsightService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import lombok.RequiredArgsConstructor;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.security.core.Authentication;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/companies")
+public class CompanyController {
+    private final CompanyContextService service;
+    private final InsightService insights;
+
+    @GetMapping
+    @Operation(summary = "Список доступных компаний с фильтрацией и пагинацией",
+            description = "Необязательные фильтры объединяются через И. Пустые фильтры игнорируются. "
+                    + "По умолчанию: 20 компаний на странице, сортировка по id по возрастанию.")
+    @ApiResponse(responseCode = "200", description = "Страница кратких сведений о компаниях")
+    public Page<CompanyListItem> getCompanies(
+            @Parameter(description = "Часть обезличенного идентификатора без учёта регистра")
+            @RequestParam(required = false) String companyId,
+            @Parameter(description = "Город: точное совпадение без учёта регистра")
+            @RequestParam(required = false) String city,
+            @Parameter(description = "Код основного ОКВЭД: точное совпадение")
+            @RequestParam(required = false) String mainIndustryCode,
+            @ParameterObject @PageableDefault(size = 20, sort = "id") Pageable pageable, Authentication user) {
+        return service.getCompanies(companyId, city, mainIndustryCode, pageable, user);
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Контекст компании: профиль, группа и крупнейшие контрагенты",
+            description = "Контрагенты ранжируются по сумме входящих и исходящих платежей. "
+                    + "Доли рассчитываются от полного оборота; собственные платежи исключаются.")
+    @ApiResponse(responseCode = "200", description = "Контекст компании, включая признаки недостающих данных")
+    @ApiResponse(responseCode = "403", description = "Нет доступа к компании")
+    @ApiResponse(responseCode = "404", description = "Неизвестный идентификатор компании")
+    public CompanyContext getCompany(@PathVariable String id, Authentication user) {
+        return service.getContext(id, user);
+    }
+
+    @PostMapping("/{id}/events/{eventId}/insight")
+    @Operation(summary = "Сгенерировать инсайт или получить сохранённый для текущей версии материалов",
+            description = "Не более четырёх вызовов LLM. Повторный POST возвращает сохранённый результат.")
+    @ApiResponse(responseCode = "200", description = "Инсайт по JSON-контракту")
+    @ApiResponse(responseCode = "503", description = "ML, LLM или Qdrant недоступен; запрос можно повторить")
+    public Map<String, Object> generateInsight(@PathVariable String id, @PathVariable UUID eventId,
+                                               Authentication user) {
+        return insights.generate(id, eventId, user);
+    }
+
+    @GetMapping("/{id}/events/top")
+    @Operation(summary = "Три наиболее релевантных события для компании",
+            description = "Сопоставляет профиль компании с текстами готовых событий; результаты ML-заглушки ранжируются по лексическому совпадению.")
+    @ApiResponse(responseCode = "200", description = "До трёх событий по убыванию relevanceScore")
+    public List<EventCandidate> topEvents(@PathVariable String id, Authentication user) {
+        return insights.topCandidates(id, user);
+    }
+
+    @GetMapping("/{id}/events/{eventId}/messages")
+    @Operation(summary = "История сообщений персонального разбора")
+    @ApiResponse(responseCode = "200", description = "Сообщения в порядке создания")
+    @ApiResponse(responseCode = "404", description = "Событие или сохранённый разбор не найден")
+    public List<DialogMessageDto> messages(@PathVariable String id, @PathVariable UUID eventId,
+                                          Authentication user) {
+        return insights.messages(id, eventId, user);
+    }
+
+    @GetMapping("/{id}/events/{eventId}/insight")
+    @Operation(summary = "Получить сохранённый инсайт текущей версии без обращения к LLM")
+    @ApiResponse(responseCode = "200", description = "Сохранённый инсайт")
+    public Map<String, Object> getInsight(@PathVariable String id, @PathVariable UUID eventId,
+                                          Authentication user) {
+        return insights.get(id, eventId, user);
+    }
+}

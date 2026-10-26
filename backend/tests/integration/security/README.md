@@ -1,0 +1,1 @@
+`SecurityConfigTest` находится здесь; новые сценарии добавляются только при наличии отдельного риска. Из корня репозитория запусти `mvn -B -ntp -f backend/tests/pom.xml clean test '-Dgroups=!unit & !e2e' -Dtest=SecurityConfigTest`. Пустая выборка считается ошибкой, а не PASS.

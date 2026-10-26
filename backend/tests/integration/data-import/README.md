@@ -1,0 +1,1 @@
+Здесь находятся `CsvImportIntegrationTest` и `CsvStartupMigrationIntegrationTest`, перенесённые вместе с тестами импорта CSV. Новые сценарии добавляются только при наличии отдельного риска. Из корня репозитория запусти `mvn -B -ntp -f backend/tests/pom.xml clean test '-Dgroups=!unit & !e2e' '-Dtest=Csv*Test'`. Пустая выборка считается ошибкой, а не PASS.

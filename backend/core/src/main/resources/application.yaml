@@ -1,0 +1,93 @@
+server:
+  servlet:
+    context-path: /api
+
+spring:
+  ai:
+    model:
+      chat: openai
+      embedding: none
+      image: none
+      audio:
+        speech: none
+        transcription: none
+      moderation: none
+    openai:
+      base-url: https://changellenge.up.railway.app/v1
+      api-key: ${OPENAI_API_KEY}
+      timeout: 90s
+      max-retries: 0
+      chat:
+        model: z-ai/glm-5.3-flash
+        max-completion-tokens: 6000
+        reasoning-effort: low
+        response-format:
+          type: JSON_OBJECT
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 51MB
+  cloud:
+    openfeign:
+      client:
+        config:
+          document-analyzer:
+            connectTimeout: 3000
+            readTimeout: 300000
+          event-ranker:
+            connectTimeout: 3000
+            readTimeout: 60000
+          news-collector:
+            connectTimeout: 3000
+            readTimeout: 600000
+  application:
+    name: core
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI}
+          audiences: alfa-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  liquibase:
+    change-log: classpath:db/changelog/master.xml
+
+qdrant:
+  host: ${QDRANT_HOST:localhost}
+  grpc-port: ${QDRANT_GRPC_PORT:6334}
+  min-score: ${QDRANT_MIN_SCORE:0.65}
+
+company-context:
+  top-counterparties: ${COMPANY_CONTEXT_TOP_COUNTERPARTIES:5}
+
+springdoc:
+  swagger-ui:
+    oauth:
+      client-id: alfa-backend
+      use-pkce-with-authorization-code-grant: true
+      scopes: openid
+      additional-query-string-params:
+        prompt: login
+
+documents:
+  storage-path: ${DOCUMENTS_STORAGE_PATH:./data/documents}
+
+ml:
+  stub: ${ML_STUB}
+  embedder: ${ML_EMBEDDER}
+  url: ${ML_URL}
+
+news:
+  collect:
+    enabled: ${NEWS_COLLECT_ENABLED:false}
+    interval: ${NEWS_COLLECT_INTERVAL:PT15M}
+    initial-delay: ${NEWS_COLLECT_INITIAL_DELAY:PT1M}
+    hours: ${NEWS_COLLECT_HOURS:24}

@@ -1,0 +1,434 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20261022-01" author="v.ledvanov">
+        <comment>Создание таблицы компаний с признаками профиля и индексами для поиска по группе и ОКВЭД.</comment>
+        <sql>
+            CREATE TABLE companies (
+                company_id TEXT PRIMARY KEY,
+                profile_status TEXT NOT NULL DEFAULT 'MISSING'
+                    CHECK (profile_status IN ('AVAILABLE', 'MISSING', 'CONFLICTING')),
+                organization_type TEXT,
+                ownership_type TEXT,
+                age_range TEXT,
+                business_lifecycle_stage TEXT,
+                main_industry_code TEXT,
+                main_industry_name TEXT,
+                negative_mark BOOLEAN,
+                employee_count_range_fns TEXT,
+                employee_count_range_spark TEXT,
+                client_type TEXT,
+                has_settlement_account BOOLEAN,
+                has_bank_guarantee BOOLEAN,
+                has_loan BOOLEAN,
+                has_leasing BOOLEAN,
+                has_deposit BOOLEAN,
+                has_payroll_project BOOLEAN,
+                has_foreign_trade BOOLEAN,
+                foreign_trade_countries TEXT,
+                has_factoring BOOLEAN,
+                revenue NUMERIC CHECK (revenue >= 0),
+                group_id TEXT,
+                city TEXT,
+                region TEXT
+            );
+            CREATE INDEX companies_group_id_idx ON companies (group_id);
+            CREATE INDEX companies_main_industry_code_idx ON companies (main_industry_code);
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261022-02" author="v.ledvanov">
+        <comment>Создание таблицы связей физических лиц с компаниями и индекса для поиска связей компании.</comment>
+        <sql>
+            CREATE TABLE person_company_links (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                person_id TEXT NOT NULL,
+                company_id TEXT NOT NULL REFERENCES companies (company_id),
+                city_name TEXT,
+                regional_center_name TEXT,
+                UNIQUE (person_id, company_id)
+            );
+            CREATE INDEX person_company_links_company_id_idx ON person_company_links (company_id);
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261022-03" author="v.ledvanov">
+        <comment>Создание таблицы платёжных агрегатов между компаниями и индекса для поиска входящих платежей.</comment>
+        <sql>
+            CREATE TABLE company_payment_summaries (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                payer_company_id TEXT NOT NULL REFERENCES companies (company_id),
+                recipient_company_id TEXT NOT NULL REFERENCES companies (company_id),
+                total_payment_amount NUMERIC NOT NULL CHECK (total_payment_amount >= 0),
+                payment_count BIGINT NOT NULL CHECK (payment_count >= 0),
+                UNIQUE (payer_company_id, recipient_company_id)
+            );
+            CREATE INDEX company_payment_summaries_recipient_idx
+                ON company_payment_summaries (recipient_company_id);
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261022-04" author="v.ledvanov" runInTransaction="true">
+        <comment>Однократная загрузка компаний, связей физических лиц и платёжных агрегатов из CSV в ресурсах приложения.</comment>
+        <customChange class="alpha.business.insight.core.migration.ImportCompanyCsvChange"/>
+    </changeSet>
+
+    <changeSet id="20261023-01" author="v.ledvanov">
+        <validCheckSum>9:7d2eca3a953553bcd7ec2fc36de3b4e5</validCheckSum>
+        <comment>Хранение событий, материалов, разборов, диалога, оценок и доступа пользователей; заполнение тестовых событий.</comment>
+        <sql>
+            CREATE TABLE events (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                title TEXT NOT NULL,
+                source_type TEXT NOT NULL CHECK (source_type IN ('TEXT', 'URL', 'PDF')),
+                source_ref TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PROCESSING' CHECK (status IN ('PROCESSING', 'READY', 'FAILED')),
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                materials_version BIGINT NOT NULL DEFAULT 1 CHECK (materials_version > 0)
+            );
+            CREATE INDEX events_status_created_at_idx ON events (status, created_at);
+
+            CREATE TABLE fragments (
+                id UUID PRIMARY KEY,
+                event_id UUID NOT NULL REFERENCES events (id),
+                page INTEGER CHECK (page > 0),
+                ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+                text TEXT NOT NULL,
+                UNIQUE (event_id, ordinal),
+                UNIQUE (id, event_id)
+            );
+
+            CREATE TABLE facts (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                event_id UUID NOT NULL REFERENCES events (id),
+                fragment_id UUID NOT NULL,
+                text TEXT NOT NULL,
+                topics TEXT[] NOT NULL DEFAULT '{}',
+                factors TEXT[] NOT NULL DEFAULT '{}',
+                industries TEXT[] NOT NULL DEFAULT '{}',
+                regions TEXT[] NOT NULL DEFAULT '{}',
+                FOREIGN KEY (fragment_id, event_id) REFERENCES fragments (id, event_id)
+            );
+            CREATE INDEX facts_event_id_idx ON facts (event_id);
+            CREATE INDEX facts_fragment_id_idx ON facts (fragment_id);
+
+            CREATE TABLE insights (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies (company_id),
+                event_id UUID NOT NULL REFERENCES events (id),
+                materials_version BIGINT NOT NULL CHECK (materials_version > 0),
+                payload JSONB NOT NULL,
+                cost_rub NUMERIC NOT NULL DEFAULT 0 CHECK (cost_rub >= 0),
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (company_id, event_id, materials_version)
+            );
+            CREATE INDEX insights_event_id_idx ON insights (event_id);
+
+            CREATE TABLE insight_steps (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                insight_id UUID NOT NULL REFERENCES insights (id),
+                step_no INTEGER NOT NULL CHECK (step_no >= 0),
+                kind TEXT NOT NULL,
+                payload JSONB NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (insight_id, step_no)
+            );
+
+            CREATE TABLE dialog_messages (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                insight_id UUID NOT NULL REFERENCES insights (id),
+                role TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX dialog_messages_insight_created_at_idx ON dialog_messages (insight_id, created_at);
+
+            CREATE TABLE feedback (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                insight_id UUID NOT NULL REFERENCES insights (id),
+                user_id TEXT NOT NULL,
+                value SMALLINT NOT NULL CHECK (value IN (-1, 1)),
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (insight_id, user_id)
+            );
+
+            CREATE TABLE user_company_access (
+                user_id TEXT NOT NULL,
+                company_id TEXT NOT NULL REFERENCES companies (company_id),
+                PRIMARY KEY (user_id, company_id)
+            );
+            CREATE INDEX user_company_access_company_id_idx ON user_company_access (company_id);
+
+            COMMENT ON TABLE events IS 'Событие, загруженное для анализа.';
+            COMMENT ON COLUMN events.id IS 'Идентификатор события.';
+            COMMENT ON COLUMN events.title IS 'Заголовок события.';
+            COMMENT ON COLUMN events.source_type IS 'Тип исходного материала: текст, ссылка или PDF.';
+            COMMENT ON COLUMN events.source_ref IS 'Исходный текст, URL или ссылка на сохранённый PDF.';
+            COMMENT ON COLUMN events.status IS 'Текущее состояние обработки события.';
+            COMMENT ON COLUMN events.created_at IS 'Время создания события.';
+            COMMENT ON COLUMN events.materials_version IS 'Версия материалов для проверки актуальности инсайтов.';
+            COMMENT ON TABLE fragments IS 'Фрагмент исходного материала события.';
+            COMMENT ON COLUMN fragments.id IS 'Идентификатор фрагмента, общий с точкой в Qdrant.';
+            COMMENT ON COLUMN fragments.event_id IS 'Событие, которому принадлежит фрагмент.';
+            COMMENT ON COLUMN fragments.page IS 'Номер страницы PDF; отсутствует для текста и URL.';
+            COMMENT ON COLUMN fragments.ordinal IS 'Порядковый номер фрагмента внутри события, начиная с нуля.';
+            COMMENT ON COLUMN fragments.text IS 'Текст фрагмента исходного материала.';
+            COMMENT ON TABLE facts IS 'Факт, извлечённый из фрагмента материала.';
+            COMMENT ON COLUMN facts.id IS 'Идентификатор извлечённого факта.';
+            COMMENT ON COLUMN facts.event_id IS 'Событие, к которому относится факт.';
+            COMMENT ON COLUMN facts.fragment_id IS 'Фрагмент того же события, подтверждающий факт.';
+            COMMENT ON COLUMN facts.text IS 'Текст подтверждённого факта.';
+            COMMENT ON COLUMN facts.topics IS 'Темы, к которым относится факт.';
+            COMMENT ON COLUMN facts.factors IS 'Факторы влияния на бизнес.';
+            COMMENT ON COLUMN facts.industries IS 'Отрасли, затронутые фактом.';
+            COMMENT ON COLUMN facts.regions IS 'Регионы, затронутые фактом.';
+            COMMENT ON TABLE insights IS 'Сохранённый разбор события для компании с версией материалов.';
+            COMMENT ON COLUMN insights.id IS 'Идентификатор персонального разбора.';
+            COMMENT ON COLUMN insights.company_id IS 'Компания, для которой подготовлен разбор.';
+            COMMENT ON COLUMN insights.event_id IS 'Событие, влияние которого анализируется.';
+            COMMENT ON COLUMN insights.materials_version IS 'Версия материалов, использованная при подготовке разбора.';
+            COMMENT ON COLUMN insights.payload IS 'Результат анализа с фактами, выводами и источниками.';
+            COMMENT ON COLUMN insights.cost_rub IS 'Стоимость подготовки разбора в рублях.';
+            COMMENT ON COLUMN insights.created_at IS 'Время сохранения разбора.';
+            COMMENT ON TABLE insight_steps IS 'Шаг анализа, сохранённый для трассировки разбора.';
+            COMMENT ON COLUMN insight_steps.id IS 'Идентификатор шага анализа.';
+            COMMENT ON COLUMN insight_steps.insight_id IS 'Разбор, в рамках которого выполнен шаг.';
+            COMMENT ON COLUMN insight_steps.step_no IS 'Порядковый номер шага внутри разбора, начиная с нуля.';
+            COMMENT ON COLUMN insight_steps.kind IS 'Вид шага анализа или вызванного инструмента.';
+            COMMENT ON COLUMN insight_steps.payload IS 'Входные данные и результат выполнения шага.';
+            COMMENT ON COLUMN insight_steps.created_at IS 'Время сохранения шага анализа.';
+            COMMENT ON TABLE dialog_messages IS 'Сообщение диалога в контексте персонального разбора.';
+            COMMENT ON COLUMN dialog_messages.id IS 'Идентификатор сообщения диалога.';
+            COMMENT ON COLUMN dialog_messages.insight_id IS 'Разбор, в контексте которого ведётся диалог.';
+            COMMENT ON COLUMN dialog_messages.role IS 'Роль автора сообщения в диалоге.';
+            COMMENT ON COLUMN dialog_messages.text IS 'Текст сообщения пользователя или ответа системы.';
+            COMMENT ON COLUMN dialog_messages.created_at IS 'Время сохранения сообщения.';
+            COMMENT ON TABLE feedback IS 'Оценка пользователем персонального разбора.';
+            COMMENT ON COLUMN feedback.id IS 'Идентификатор пользовательской оценки.';
+            COMMENT ON COLUMN feedback.insight_id IS 'Разбор, которому выставлена оценка.';
+            COMMENT ON COLUMN feedback.user_id IS 'Идентификатор пользователя из claim sub в Keycloak.';
+            COMMENT ON COLUMN feedback.value IS 'Оценка полезности: 1 — полезно, -1 — неполезно.';
+            COMMENT ON COLUMN feedback.created_at IS 'Время сохранения оценки.';
+            COMMENT ON TABLE user_company_access IS 'Право пользователя работать с данными компании.';
+            COMMENT ON COLUMN user_company_access.user_id IS 'Идентификатор пользователя из claim sub в Keycloak.';
+            COMMENT ON COLUMN user_company_access.company_id IS 'Обезличенный идентификатор доступной компании.';
+
+            WITH fixtures(n, title, source_ref) AS (VALUES
+                (1, 'TEST · Изменение ключевой ставки', 'TEST FIXTURE: Банк России снизил ключевую ставку; условия новых кредитов могут измениться.'),
+                (2, 'TEST · Новые условия импортных перевозок', 'TEST FIXTURE: Перевозчики изменили сроки доставки грузов из Китая.'),
+                (3, 'TEST · Рост спроса на складские площади', 'TEST FIXTURE: Производители увеличили спрос на региональные складские помещения.'),
+                (4, 'TEST · Ограничения экспорта зерна', 'TEST FIXTURE: Введены временные ограничения на экспорт зерна и продуктов растениеводства.'),
+                (5, 'TEST · Повышение тарифов на электроэнергию', 'TEST FIXTURE: Для промышленных предприятий региона повышены тарифы на электроэнергию.'),
+                (6, 'TEST · Изменение правил электронных счетов-фактур', 'TEST FIXTURE: Обновлены правила электронного документооборота для поставщиков.'),
+                (7, 'TEST · Спрос на облачную инфраструктуру', 'TEST FIXTURE: Компании увеличивают бюджеты на облачные сервисы и хранение данных.'),
+                (8, 'TEST · Дефицит микрочипов для оборудования', 'TEST FIXTURE: Сроки поставки микрочипов для промышленной автоматики увеличились.'),
+                (9, 'TEST · Новые требования к маркировке товаров', 'TEST FIXTURE: Новые требования к маркировке затрагивают производителей и оптовые склады.'),
+                (10, 'TEST · Снижение стоимости стального проката', 'TEST FIXTURE: На внутреннем рынке снизились цены на стальной прокат.'),
+                (11, 'TEST · Увеличение налога на имущество', 'TEST FIXTURE: Регион изменил порядок расчёта налога на коммерческую недвижимость.'),
+                (12, 'TEST · Расширение программы льготного лизинга', 'TEST FIXTURE: Малому бизнесу стали доступны льготные условия лизинга оборудования.'),
+                (13, 'TEST · Рост стоимости дизельного топлива', 'TEST FIXTURE: Закупочные цены на дизельное топливо выросли для транспортных компаний.'),
+                (14, 'TEST · Рекордный урожай масличных культур', 'TEST FIXTURE: Ожидается рост урожая масличных культур и загрузки элеваторов.'),
+                (15, 'TEST · Засуха в южных регионах', 'TEST FIXTURE: Засуха может сократить урожай зерновых и повысить расходы аграриев.'),
+                (16, 'TEST · Запуск цифровой платформы закупок', 'TEST FIXTURE: Крупные заказчики переводят закупки для промышленности на новую цифровую платформу.'),
+                (17, 'TEST · Ужесточение требований к кибербезопасности', 'TEST FIXTURE: Новые требования по защите информации увеличат расходы ИТ-компаний.'),
+                (18, 'TEST · Доступность кредитования для МСП', 'TEST FIXTURE: Банки расширили кредитные лимиты для малого и среднего бизнеса.'),
+                (19, 'TEST · Увеличение срока оплаты поставщикам', 'TEST FIXTURE: Ряд промышленных покупателей увеличивает отсрочку платежа поставщикам.'),
+                (20, 'TEST · Открытие распределительного центра', 'TEST FIXTURE: Торговая сеть открывает распределительный центр в центральном регионе.'),
+                (21, 'TEST · Изменения таможенного оформления', 'TEST FIXTURE: Изменены сроки таможенного оформления импортных комплектующих.'),
+                (22, 'TEST · Рост ставок аренды офисов', 'TEST FIXTURE: В деловых кварталах выросла стоимость аренды офисной недвижимости.'),
+                (23, 'TEST · Снижение спроса на офисные помещения', 'TEST FIXTURE: Арендаторы сокращают площади офисов и пересматривают договоры.'),
+                (24, 'TEST · Новые субсидии для модернизации производства', 'TEST FIXTURE: Производители могут получить субсидию на модернизацию оборудования.'),
+                (25, 'TEST · Дефицит водителей грузового транспорта', 'TEST FIXTURE: Перевозчики сообщают о нехватке водителей и росте затрат на персонал.'),
+                (26, 'TEST · Внедрение электронных транспортных накладных', 'TEST FIXTURE: Для перевозок вводится обязательный электронный документооборот.'),
+                (27, 'TEST · Рост экспорта программного обеспечения', 'TEST FIXTURE: ИТ-компании увеличили экспорт услуг и открывают новые направления продаж.'),
+                (28, 'TEST · Пересмотр цен на программные лицензии', 'TEST FIXTURE: Поставщики программного обеспечения обновили условия лицензирования.'),
+                (29, 'TEST · Увеличение спроса на услуги факторинга', 'TEST FIXTURE: Поставщики используют факторинг для финансирования дебиторской задолженности.'),
+                (30, 'TEST · Продление сроков валютных расчётов', 'TEST FIXTURE: Изменились сроки международных расчётов в нескольких валютах.'),
+                (31, 'TEST · Рост заказов на металлоконструкции', 'TEST FIXTURE: Строительные проекты увеличили спрос на металлоконструкции.'),
+                (32, 'TEST · Перенос сроков строительства', 'TEST FIXTURE: Девелоперы пересматривают сроки ввода коммерческих объектов.'),
+                (33, 'TEST · Новые правила обращения с отходами', 'TEST FIXTURE: Производителям и торговым компаниям обновили нормативы утилизации упаковки.'),
+                (34, 'TEST · Увеличение тарифов железнодорожной доставки', 'TEST FIXTURE: Пересмотрены тарифы на перевозку контейнеров и сырья по железной дороге.'),
+                (35, 'TEST · Снижение стоимости полимерного сырья', 'TEST FIXTURE: Производители упаковки получили снижение цен на полимерное сырьё.'),
+                (36, 'TEST · Изменение требований к персональным данным', 'TEST FIXTURE: Компаниям необходимо обновить процессы обработки клиентских данных.'),
+                (37, 'TEST · Рост спроса на облачные кассы', 'TEST FIXTURE: Розничные сети ускорили внедрение облачных касс и платёжных терминалов.'),
+                (38, 'TEST · Сокращение сроков поставки сельхозтехники', 'TEST FIXTURE: Дилеры сократили сроки поставки тракторов и сельскохозяйственных машин.'),
+                (39, 'TEST · Увеличение закупок удобрений', 'TEST FIXTURE: Аграрные предприятия заранее наращивают закупки минеральных удобрений.'),
+                (40, 'TEST · Пересмотр условий страхования грузов', 'TEST FIXTURE: Страховщики обновили условия страхования международных грузовых перевозок.'),
+                (41, 'TEST · Рост просрочки в оптовой торговле', 'TEST FIXTURE: Оптовые поставщики отмечают рост задержек оплаты от покупателей.'),
+                (42, 'TEST · Запуск программы энергоэффективности', 'TEST FIXTURE: Предприятиям компенсируют часть расходов на энергоэффективное оборудование.'),
+                (43, 'TEST · Увеличение туристического потока', 'TEST FIXTURE: Регион ожидает больше туристов и спрос на гостиничные услуги.'),
+                (44, 'TEST · Рост спроса на продовольственную логистику', 'TEST FIXTURE: Ритейлеры увеличили заказ перевозок продуктов с температурным режимом.'),
+                (45, 'TEST · Новая система расчёта экологического сбора', 'TEST FIXTURE: Обновлён порядок уплаты экологического сбора для производителей упаковки.'),
+                (46, 'TEST · Рынок коммерческих автомобилей', 'TEST FIXTURE: Дилеры обновили цены и условия поставки коммерческих автомобилей.'),
+                (47, 'TEST · Переход предприятий на отечественное ПО', 'TEST FIXTURE: Промышленные предприятия объявили закупки отечественных программных решений.'),
+                (48, 'TEST · Рост цен на цемент', 'TEST FIXTURE: Строительные компании столкнулись с повышением оптовых цен на цемент.'),
+                (49, 'TEST · Новые требования к банковским гарантиям', 'TEST FIXTURE: Государственные заказчики обновили требования к обеспечению контрактов.'),
+                (50, 'TEST · Открытие экспортного маршрута', 'TEST FIXTURE: Запущен новый маршрут для экспорта готовой продукции в соседние страны.')
+            )
+            INSERT INTO events (id, title, source_type, source_ref, status, created_at, materials_version)
+            SELECT md5('alfa-test-event-' || n)::uuid, title, 'TEXT', source_ref, 'READY',
+                   CURRENT_TIMESTAMP - (n || ' hours')::interval, 1
+            FROM fixtures
+            ON CONFLICT (id) DO NOTHING;
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261023-02" author="v.ledvanov">
+        <comment>Описание существующих таблиц компаний, связей и платежей.</comment>
+        <sql>
+            COMMENT ON TABLE companies IS 'Профиль компании.';
+            COMMENT ON COLUMN companies.company_id IS 'Обезличенный идентификатор компании.';
+            COMMENT ON COLUMN companies.profile_status IS 'Статус профиля компании.';
+            COMMENT ON COLUMN companies.organization_type IS 'Тип организации.';
+            COMMENT ON COLUMN companies.ownership_type IS 'Форма собственности.';
+            COMMENT ON COLUMN companies.age_range IS 'Диапазон возраста компании в годах.';
+            COMMENT ON COLUMN companies.business_lifecycle_stage IS 'Этап развития компании.';
+            COMMENT ON COLUMN companies.main_industry_code IS 'Код основного ОКВЭД.';
+            COMMENT ON COLUMN companies.main_industry_name IS 'Наименование основного вида деятельности.';
+            COMMENT ON COLUMN companies.negative_mark IS 'Признак негативной отметки.';
+            COMMENT ON COLUMN companies.employee_count_range_fns IS 'Диапазон численности работников по данным ФНС.';
+            COMMENT ON COLUMN companies.employee_count_range_spark IS 'Диапазон численности работников по данным СПАРК.';
+            COMMENT ON COLUMN companies.client_type IS 'Тип клиента.';
+            COMMENT ON COLUMN companies.has_settlement_account IS 'Признак расчётно-кассового обслуживания.';
+            COMMENT ON COLUMN companies.has_bank_guarantee IS 'Признак банковской гарантии.';
+            COMMENT ON COLUMN companies.has_loan IS 'Признак кредитного продукта.';
+            COMMENT ON COLUMN companies.has_leasing IS 'Признак лизинга.';
+            COMMENT ON COLUMN companies.has_deposit IS 'Признак депозитного продукта.';
+            COMMENT ON COLUMN companies.has_payroll_project IS 'Признак зарплатного проекта.';
+            COMMENT ON COLUMN companies.has_foreign_trade IS 'Признак внешнеторговой деятельности.';
+            COMMENT ON COLUMN companies.foreign_trade_countries IS 'Страны внешнеторговой деятельности.';
+            COMMENT ON COLUMN companies.has_factoring IS 'Признак факторинга.';
+            COMMENT ON COLUMN companies.revenue IS 'Выручка компании.';
+            COMMENT ON COLUMN companies.group_id IS 'Обезличенный идентификатор группы компаний.';
+            COMMENT ON COLUMN companies.city IS 'Город компании.';
+            COMMENT ON COLUMN companies.region IS 'Регион компании.';
+            COMMENT ON TABLE person_company_links IS 'Связь физического лица с компанией.';
+            COMMENT ON COLUMN person_company_links.id IS 'Идентификатор записи связи.';
+            COMMENT ON COLUMN person_company_links.person_id IS 'Обезличенный идентификатор физического лица.';
+            COMMENT ON COLUMN person_company_links.company_id IS 'Компания, связанная с физическим лицом.';
+            COMMENT ON COLUMN person_company_links.city_name IS 'Город из записи связи.';
+            COMMENT ON COLUMN person_company_links.regional_center_name IS 'Региональный центр из записи связи.';
+            COMMENT ON TABLE company_payment_summaries IS 'Агрегированные платежи между компаниями.';
+            COMMENT ON COLUMN company_payment_summaries.id IS 'Идентификатор платёжного агрегата.';
+            COMMENT ON COLUMN company_payment_summaries.payer_company_id IS 'Компания-плательщик.';
+            COMMENT ON COLUMN company_payment_summaries.recipient_company_id IS 'Компания-получатель.';
+            COMMENT ON COLUMN company_payment_summaries.total_payment_amount IS 'Общая сумма платежей между плательщиком и получателем.';
+            COMMENT ON COLUMN company_payment_summaries.payment_count IS 'Количество платежей между плательщиком и получателем.';
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261023-knowledge-documents" author="v.ledvanov">
+        <comment>База знаний PDF, связи фрагментов и компенсационная очистка загрузок.</comment>
+        <sql>
+            CREATE TABLE documents (
+                id UUID PRIMARY KEY,
+                title TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL UNIQUE,
+                size_bytes BIGINT NOT NULL CHECK (size_bytes > 0 AND size_bytes &lt;= 20971520),
+                sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+                uploaded_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                publication_date DATE,
+                schema_version INTEGER NOT NULL CHECK (schema_version > 0),
+                embedding_model TEXT NOT NULL,
+                embedding_dimension INTEGER NOT NULL CHECK (embedding_dimension > 0),
+                stub BOOLEAN NOT NULL
+            );
+
+            ALTER TABLE fragments ALTER COLUMN event_id DROP NOT NULL;
+            ALTER TABLE fragments ADD COLUMN document_id UUID REFERENCES documents(id);
+            ALTER TABLE fragments ADD CONSTRAINT fragments_owner_check
+                CHECK ((event_id IS NOT NULL) != (document_id IS NOT NULL));
+            ALTER TABLE fragments ADD CONSTRAINT fragments_document_page_check
+                CHECK (document_id IS NULL OR page IS NOT NULL);
+            ALTER TABLE fragments ADD CONSTRAINT fragments_document_ordinal_key UNIQUE (document_id, ordinal);
+            ALTER TABLE fragments ADD CONSTRAINT fragments_id_document_key UNIQUE (id, document_id);
+
+            ALTER TABLE facts ALTER COLUMN event_id DROP NOT NULL;
+            ALTER TABLE facts ADD COLUMN document_id UUID REFERENCES documents(id);
+            ALTER TABLE facts ADD COLUMN kind TEXT NOT NULL DEFAULT 'FACT' CHECK (kind IN ('FACT', 'BANK_VIEW'));
+            ALTER TABLE facts ADD CONSTRAINT facts_owner_check
+                CHECK ((event_id IS NOT NULL) != (document_id IS NOT NULL));
+            ALTER TABLE facts ADD CONSTRAINT facts_document_fragment_fk
+                FOREIGN KEY (fragment_id, document_id) REFERENCES fragments (id, document_id);
+            CREATE INDEX facts_document_id_idx ON facts (document_id);
+
+            CREATE TABLE document_upload_cleanup (
+                document_id UUID PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                collection_name TEXT NOT NULL,
+                expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP + INTERVAL '10 minutes'
+            );
+            CREATE INDEX document_upload_cleanup_expires_idx ON document_upload_cleanup (expires_at);
+
+            COMMENT ON TABLE documents IS 'Аналитический PDF банка в базе знаний для RAG.';
+            COMMENT ON COLUMN documents.id IS 'Идентификатор документа, общий с payload точек Qdrant.';
+            COMMENT ON COLUMN documents.title IS 'Название аналитического материала.';
+            COMMENT ON COLUMN documents.file_name IS 'Исходное имя загруженного файла.';
+            COMMENT ON COLUMN documents.file_path IS 'Путь к оригиналу PDF в файловом хранилище.';
+            COMMENT ON COLUMN documents.size_bytes IS 'Размер оригинала PDF в байтах.';
+            COMMENT ON COLUMN documents.sha256 IS 'SHA-256 оригинала PDF.';
+            COMMENT ON COLUMN documents.uploaded_at IS 'Время загрузки документа.';
+            COMMENT ON COLUMN documents.publication_date IS 'Дата публикации, если указана при загрузке.';
+            COMMENT ON COLUMN documents.schema_version IS 'Версия контракта ответа ML.';
+            COMMENT ON COLUMN documents.embedding_model IS 'Идентификатор модели векторов.';
+            COMMENT ON COLUMN documents.embedding_dimension IS 'Размерность векторов фрагментов.';
+            COMMENT ON COLUMN documents.stub IS 'Признак синтетического результата заглушки ML.';
+
+            COMMENT ON TABLE document_upload_cleanup IS 'Задание компенсационной очистки незавершённой загрузки PDF.';
+            COMMENT ON COLUMN document_upload_cleanup.document_id IS 'Идентификатор загрузки для удаления точек Qdrant.';
+            COMMENT ON COLUMN document_upload_cleanup.file_path IS 'Путь к удаляемому оригиналу PDF.';
+            COMMENT ON COLUMN document_upload_cleanup.collection_name IS 'Коллекция Qdrant, в которой могла начаться индексация.';
+            COMMENT ON COLUMN document_upload_cleanup.expires_at IS 'Время начала аварийной очистки после истечения срока обработки.';
+
+            COMMENT ON COLUMN fragments.document_id IS 'Документ базы знаний, которому принадлежит фрагмент; альтернатива event_id.';
+            COMMENT ON COLUMN facts.document_id IS 'Документ базы знаний, которому принадлежит утверждение; альтернатива event_id.';
+            COMMENT ON COLUMN facts.kind IS 'Вид извлечённого утверждения: FACT или BANK_VIEW.';
+            COMMENT ON TABLE fragments IS 'Фрагмент материала события или документа базы знаний.';
+            COMMENT ON TABLE facts IS 'Факт или позиция банка со ссылкой на подтверждающий фрагмент.';
+            COMMENT ON COLUMN fragments.ordinal IS 'Порядковый номер фрагмента внутри материала, начиная с нуля.';
+        </sql>
+    </changeSet>
+
+    <changeSet id="20261023-pdf-chunks-in-qdrant" author="v.ledvanov">
+        <comment>Только метаданные документов в PostgreSQL; тексты чанков и векторы в Qdrant.</comment>
+        <sql>
+            ALTER TABLE documents ADD COLUMN chunk_count INTEGER;
+            UPDATE documents d SET chunk_count = (
+                SELECT COUNT(*) FROM fragments f WHERE f.document_id = d.id
+            );
+            ALTER TABLE documents ALTER COLUMN chunk_count SET NOT NULL;
+            ALTER TABLE documents ADD CONSTRAINT documents_chunk_count_check CHECK (chunk_count > 0);
+            COMMENT ON COLUMN documents.chunk_count IS 'Количество чанков документа, хранящихся только в Qdrant.';
+
+            DROP TABLE facts;
+            DROP TABLE fragments;
+            DROP TABLE document_upload_cleanup;
+        </sql>
+    </changeSet>
+    <changeSet id="20261024-pdf-size-50mb" author="v.ledvanov">
+        <comment>Увеличение максимального размера PDF до 50 МБ.</comment>
+        <sql>
+            ALTER TABLE documents DROP CONSTRAINT documents_size_bytes_check;
+            ALTER TABLE documents ADD CONSTRAINT documents_size_bytes_check
+                CHECK (size_bytes > 0 AND size_bytes &lt;= 52428800);
+        </sql>
+    </changeSet>
+        <changeSet id="20261025-news-events" author="abubakarmz">
+        <comment>Поля новостей из RSS: внешний идентификатор, первоисточник, дата публикации.</comment>
+        <sql>
+            ALTER TABLE events ADD COLUMN external_id TEXT;
+            ALTER TABLE events ADD COLUMN source_url TEXT;
+            ALTER TABLE events ADD COLUMN source_name TEXT;
+            ALTER TABLE events ADD COLUMN published_at TIMESTAMP WITH TIME ZONE;
+            CREATE UNIQUE INDEX events_external_id_uq ON events (external_id) WHERE external_id IS NOT NULL;
+            COMMENT ON COLUMN events.external_id IS 'Внешний идентификатор материала для защиты от повторной загрузки.';
+            COMMENT ON COLUMN events.source_url IS 'Ссылка на первоисточник события.';
+            COMMENT ON COLUMN events.source_name IS 'Источник события, например cbr или interfax.';
+            COMMENT ON COLUMN events.published_at IS 'Время публикации материала в источнике.';
+        </sql>
+    </changeSet>
+</databaseChangeLog>

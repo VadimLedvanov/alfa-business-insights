@@ -1,0 +1,3 @@
+org.springframework.test.context.ContextCustomizerFactory=\
+alpha.business.insight.core.qa.support.MockMvcEvidenceContextCustomizerFactory,\
+alpha.business.insight.core.qa.support.OfflineAiContextCustomizerFactory
