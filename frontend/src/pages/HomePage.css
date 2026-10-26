@@ -1,0 +1,6 @@
+.home-widget { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 560px; border: 1px solid var(--color-light-border-secondary); color: var(--color-light-text-primary); text-align: left; cursor: pointer; transition: border-color .15s; }
+.home-widget:hover { border-color: var(--color-light-border-primary); }
+.home-widget__count { font-size: 24px; line-height: 32px; font-weight: 700; }
+.home-widget__list { display: flex; flex-direction: column; gap: 8px; }
+.home-widget__title { font-size: 15px; line-height: 22px; }
+.home-widget__action { display: flex; align-items: center; justify-content: space-between; padding-top: 14px; border-top: 1px solid var(--color-light-border-secondary); font-size: 14px; font-weight: 600; }

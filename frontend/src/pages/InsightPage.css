@@ -129,3 +129,28 @@ a.source-card:hover { border-color: var(--color-light-border-primary); }
   .insight-layout { grid-template-columns: 1fr; }
   .split { grid-template-columns: 1fr; }
 }
+
+.insight-generate__spinner--dark { border-color: var(--color-light-neutral-translucent-300); border-top-color: var(--color-light-text-primary); flex: none; }
+.insight-generate__error { margin: 0 0 12px; color: var(--radar-impact-high-text); font-size: 14px; }
+.gen-steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.gen-steps__item { display: flex; align-items: center; gap: 10px; min-height: 20px; font-size: 14px; color: var(--color-light-text-tertiary); }
+.gen-steps__item--active { color: var(--color-light-text-primary); font-weight: 600; }
+.gen-steps__item--done { color: var(--color-light-text-secondary); }
+.gen-steps__item--done::before { content: '✓'; width: 15px; text-align: center; color: var(--radar-opportunity-text); }
+.gen-steps__item:not(.gen-steps__item--active):not(.gen-steps__item--done)::before { content: ''; width: 15px; height: 15px; flex: none; border: 2px solid var(--color-light-border-secondary); border-radius: 50%; box-sizing: border-box; }
+
+.source-card--expandable { display: block; }
+.source-card__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.source-card__toggle { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.source-card__toggle:hover strong { text-decoration: underline; }
+.source-card__chevron { flex: none; color: var(--color-light-text-secondary); font-size: 12px; }
+.source-card__text { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-light-border-secondary); }
+.source-card__text p { margin: 0 0 8px; font-size: 14px; line-height: 20px; }
+.source-card__text p:last-child { margin-bottom: 0; }
+.source-card--expandable + .source-card--expandable { margin-top: 10px; }
+
+.cited { margin-bottom: 12px; }
+.cited:last-child { margin-bottom: 0; }
+.cited p { margin: 0 0 6px; }
+.cited__link { padding: 0; border: 0; background: none; font: inherit; font-size: 12px; line-height: 16px; color: var(--color-light-text-secondary); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; word-break: break-all; text-align: left; }
+.cited__link:hover { color: var(--color-light-text-primary); }

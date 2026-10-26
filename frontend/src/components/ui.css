@@ -55,3 +55,6 @@
 }
 .skeleton { background: var(--color-light-neutral-translucent-200); border-radius: 8px; animation: pulse 1.3s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+.missing-note { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--color-light-border-primary); border-radius: 12px; background: var(--color-light-bg-secondary); font-size: 13px; line-height: 18px; color: var(--color-light-text-secondary); }
+.missing-note strong { font-size: 14px; font-weight: 600; color: var(--color-light-text-primary); }

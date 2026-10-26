@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { CompanyContext } from '../api/types';
-import { bankProducts, companyIdLabel, foreignTradeLabel, revenueLabel } from '../lib/format';
+import { bankProducts, companyIdLabel, foreignTradeLabel, missingDataLabels, revenueLabel } from '../lib/format';
 import { ProvenanceLabel, type ProvKind } from '../ui/Provenance';
 import { ChevronRightMIcon } from '../ui/icons';
 
@@ -40,6 +40,18 @@ export function LoadErr({ loading, error, onRetry, children }: { loading: boolea
   return <>{children}</>;
 }
 
+/** Блок «Данных недостаточно»: чего нет в профиле компании (`missingData`). */
+export function MissingDataNote({ items }: { items: string[] }) {
+  const labels = missingDataLabels(items);
+  if (labels.length === 0) return null;
+  return (
+    <div className="missing-note" role="note">
+      <strong>Данных недостаточно</strong>
+      <span>Нет данных: {labels.join(', ')}.</span>
+    </div>
+  );
+}
+
 /** Карточка профиля компании для правой колонки ленты и разбора. */
 export function CompanyProfileCard({ ctx, onOpenProfile }: { ctx: CompanyContext; onOpenProfile?: () => void }) {
   const p = ctx.profile;
@@ -69,6 +81,7 @@ export function CompanyProfileCard({ ctx, onOpenProfile }: { ctx: CompanyContext
           {products.map((t) => <span key={t} className="tag">{t}</span>)}
         </div>
       )}
+      <MissingDataNote items={ctx.missingData} />
       {onOpenProfile && (
         <button className="tag" style={{ cursor: 'pointer', border: 0, marginTop: 16, gap: 6 }} onClick={onOpenProfile}>
           Профиль компании <ChevronRightMIcon width={16} height={16} />
