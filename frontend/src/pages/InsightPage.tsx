@@ -246,7 +246,7 @@ function InsightContent({ insight, onSource }: { insight: Insight; onSource: (so
   return <>
     <SignificancePanel status={insight.significance ?? 'UNKNOWN'} reason={insight.significanceReason ?? null} />
     {insight.facts.length > 0 && <section className="panel"><ProvenanceLabel kind="fact"/><h2>Что произошло</h2>{insight.facts.map((f) => <p key={f.fragment_id}>{f.text}</p>)}</section>}
-    {insight.bank_view.length > 0 && <section className="panel"><ProvenanceLabel kind="bank"/><h2>Позиция банка</h2>{insight.bank_view.map((f) => <p key={f.fragment_id}>{f.text}</p>)}</section>}
+    <section className="panel"><ProvenanceLabel kind="bank"/><h2>Позиция банка</h2>{insight.bank_view.length > 0 ? insight.bank_view.map((f) => <p key={f.fragment_id}>{f.text}</p>) : <p className="panel__muted">Аналитики по этому событию нет.</p>}</section>
     {insight.ai_inference.length > 0 && <section className="panel panel--ai"><ProvenanceLabel kind="ai"/><h2>Почему это важно для вашей компании</h2>{insight.ai_inference.map((f, i) => <p key={i}>{f.text}</p>)}{confidence && <ConfidenceWord value={confidence} />}{insight.features_used.length > 0 && <div className="chips">{insight.features_used.map((feature) => <span className="tag" key={feature}>{feature}</span>)}</div>}</section>}
     {insight.risks.length > 0 && <TextList title="Возможные риски" items={insight.risks.map((x) => x.text)}/>}
     {insight.opportunities.length > 0 && <TextList title="Возможности" items={insight.opportunities.map((x) => x.text)}/>}
