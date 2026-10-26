@@ -15,6 +15,9 @@ function eventsWord(n: number): string {
   return 'событий';
 }
 
+/** Порог score для виджета: события без совпадения с профилем компании (score = 0) не считаются. */
+const SCORE_THRESHOLD = 0;
+
 /** Главный экран после выбора компании: виджет «Радар» с переходом в ленту (FE-1). */
 export function HomePage() {
   const { companyId } = useCompany();
@@ -27,7 +30,7 @@ export function HomePage() {
     if (!companyId) return;
     let alive = true; setEvents(null); setError(null);
     api.topEvents(companyId)
-      .then((value) => alive && setEvents(value))
+      .then((value) => alive && setEvents(value.filter((event) => event.relevanceScore > SCORE_THRESHOLD)))
       .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
     return () => { alive = false; };
   }, [companyId, tick]);
