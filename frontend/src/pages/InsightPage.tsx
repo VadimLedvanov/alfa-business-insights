@@ -120,7 +120,7 @@ export function InsightPage({ eventId }: { eventId: string }) {
               <h2>{event.status === 'FAILED' ? 'Разбор не сформирован' : 'Инсайд по этому событию ещё не создан'}</h2>
               <p>{event.sourceType === 'TEXT' ? `Сопоставим событие с профилем компании ${companyId}, сохраним вывод и оценку значимости.` : 'Для URL и PDF извлечение текста пока не подключено, поэтому сформировать инсайд нельзя.'}</p>
               {genError && !busy && <p className="insight-generate__error" role="alert">Не удалось сформировать инсайд: {genError}</p>}
-              {event.sourceType === 'TEXT' && !busy && <button className="button button--primary insight-generate" onClick={() => void generate()}>{genError ? 'Повторить' : 'Сформировать инсайд'}</button>}
+              {event.sourceType === 'TEXT' && !busy && <button className="button button--primary insight-generate" onClick={() => void generate()}>{genError ? 'Повторить' : 'Сгенерировать инсайт'}</button>}
               {busy && <ol className="gen-steps" aria-live="polite" aria-busy="true">{GENERATION_STEPS.map((label, i) => <li key={label} className={`gen-steps__item${i < step ? ' gen-steps__item--done' : i === step ? ' gen-steps__item--active' : ''}`}>{i === step && <span className="insight-generate__spinner insight-generate__spinner--dark" aria-hidden="true" />}{label}</li>)}</ol>}
             </section>
           </div>
