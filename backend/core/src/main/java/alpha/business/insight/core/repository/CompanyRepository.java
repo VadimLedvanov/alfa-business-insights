@@ -17,12 +17,15 @@ public interface CompanyRepository extends JpaRepository<Company, String> {
                 c.id, c.profileStatus, c.mainIndustryCode, c.mainIndustryName, c.city, c.region)
             FROM Company c
             WHERE (:companyId IS NULL OR LOWER(c.id) LIKE LOWER(CONCAT('%', CAST(:companyId AS String), '%')) ESCAPE '!')
+              AND (:userId IS NULL OR EXISTS (
+                  SELECT 1 FROM UserCompanyAccess a WHERE a.id.userId = :userId AND a.id.companyId = c.id))
               AND (:city IS NULL OR LOWER(c.city) = LOWER(CAST(:city AS String)))
               AND (:mainIndustryCode IS NULL OR c.mainIndustryCode = :mainIndustryCode)
             """)
     Page<CompanyListItem> findCompanies(@Param("companyId") String companyId,
                                       @Param("city") String city,
                                       @Param("mainIndustryCode") String mainIndustryCode,
+                                      @Param("userId") String userId,
                                       Pageable pageable);
 
     /**

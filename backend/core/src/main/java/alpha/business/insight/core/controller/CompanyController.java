@@ -33,7 +33,7 @@ public class CompanyController {
     private final InsightService insights;
 
     @GetMapping
-    @Operation(summary = "Список компаний с фильтрацией и пагинацией",
+    @Operation(summary = "Список доступных компаний с фильтрацией и пагинацией",
             description = "Необязательные фильтры объединяются через И. Пустые фильтры игнорируются. "
                     + "По умолчанию: 20 компаний на странице, сортировка по id по возрастанию.")
     @ApiResponse(responseCode = "200", description = "Страница кратких сведений о компаниях")
@@ -44,8 +44,8 @@ public class CompanyController {
             @RequestParam(required = false) String city,
             @Parameter(description = "Код основного ОКВЭД: точное совпадение")
             @RequestParam(required = false) String mainIndustryCode,
-            @ParameterObject @PageableDefault(size = 20, sort = "id") Pageable pageable) {
-        return service.getCompanies(companyId, city, mainIndustryCode, pageable);
+            @ParameterObject @PageableDefault(size = 20, sort = "id") Pageable pageable, Authentication user) {
+        return service.getCompanies(companyId, city, mainIndustryCode, pageable, user);
     }
 
     @GetMapping("/{id}")
@@ -53,9 +53,10 @@ public class CompanyController {
             description = "Контрагенты ранжируются по сумме входящих и исходящих платежей. "
                     + "Доли рассчитываются от полного оборота; собственные платежи исключаются.")
     @ApiResponse(responseCode = "200", description = "Контекст компании, включая признаки недостающих данных")
+    @ApiResponse(responseCode = "403", description = "Нет доступа к компании")
     @ApiResponse(responseCode = "404", description = "Неизвестный идентификатор компании")
-    public CompanyContext getCompany(@PathVariable String id) {
-        return service.getContext(id);
+    public CompanyContext getCompany(@PathVariable String id, Authentication user) {
+        return service.getContext(id, user);
     }
 
     @PostMapping("/{id}/events/{eventId}/insight")

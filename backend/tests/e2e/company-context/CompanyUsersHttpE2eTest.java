@@ -182,7 +182,6 @@ class CompanyUsersHttpE2eTest extends OfflineEventsE2eTest {
         "UNASSIGNED_DIRECTOR, unassigned, profile",
         "UNASSIGNED_DIRECTOR, unassigned, top"
     })
-    @Tag("known-defect")
     @Story("Ограничить доступ к компании выданным grant")
     @DisplayName("TestE2EDirectorCannotReadCompanyWithoutGrant")
     void TestE2EDirectorCannotReadCompanyWithoutGrant(
