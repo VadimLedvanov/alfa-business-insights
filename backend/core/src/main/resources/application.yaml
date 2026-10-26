@@ -33,10 +33,10 @@ spring:
         config:
           document-analyzer:
             connectTimeout: 3000
-            readTimeout: 60000
+            readTimeout: 300000
           event-ranker:
             connectTimeout: 3000
-            readTimeout: 30000
+            readTimeout: 60000
           news-collector:
             connectTimeout: 3000
             readTimeout: 600000

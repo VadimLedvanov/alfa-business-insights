@@ -182,13 +182,22 @@ public class InsightService {
         }
         EventRanker.RankResponse response;
         try {
-            response = client.rank(new EventRanker.RankRequest(context, candidates.stream()
-                    .map(event -> new EventRanker.Candidate(event.getId(), event.getTitle(), event.getSourceRef(),
-                            event.getCreatedAt()))
-                    .toList(), 3, null));
+            response = client.rank(new EventRanker.RankRequest(
+                context, 
+                candidates.stream()
+                    .map(event -> new EventRanker.Candidate(
+                        event.getId(), 
+                        event.getTitle(), 
+                        event.getSourceRef(),
+                        event.getPublishedAt() != null ? event.getPublishedAt() : event.getCreatedAt()
+                    ))
+                    .toList(), 
+                3, 
+                null
+            ));
         } catch (RuntimeException exception) {
             log.warn("Event ranking failed, fallback to embeddings companyId={} errorType={}", companyId,
-                    exception.getClass().getSimpleName());
+                exception.getClass().getSimpleName());
             return List.of();
         }
         if (response == null || response.items() == null) {
