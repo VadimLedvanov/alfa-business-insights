@@ -417,4 +417,18 @@
                 CHECK (size_bytes > 0 AND size_bytes &lt;= 52428800);
         </sql>
     </changeSet>
+        <changeSet id="20261025-news-events" author="abubakarmz">
+        <comment>Поля новостей из RSS: внешний идентификатор, первоисточник, дата публикации.</comment>
+        <sql>
+            ALTER TABLE events ADD COLUMN external_id TEXT;
+            ALTER TABLE events ADD COLUMN source_url TEXT;
+            ALTER TABLE events ADD COLUMN source_name TEXT;
+            ALTER TABLE events ADD COLUMN published_at TIMESTAMP WITH TIME ZONE;
+            CREATE UNIQUE INDEX events_external_id_uq ON events (external_id) WHERE external_id IS NOT NULL;
+            COMMENT ON COLUMN events.external_id IS 'Внешний идентификатор материала для защиты от повторной загрузки.';
+            COMMENT ON COLUMN events.source_url IS 'Ссылка на первоисточник события.';
+            COMMENT ON COLUMN events.source_name IS 'Источник события, например cbr или interfax.';
+            COMMENT ON COLUMN events.published_at IS 'Время публикации материала в источнике.';
+        </sql>
+    </changeSet>
 </databaseChangeLog>
